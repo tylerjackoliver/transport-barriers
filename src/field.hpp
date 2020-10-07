@@ -29,11 +29,7 @@ namespace LCS
     template <class Type>
     class field
     {
-
-        private:
-                    
         protected:
-
             typedef std::vector<Type> state_type;           // Integrator state type
             unsigned nx_;                                   // X-extent
             unsigned ny_;                                   // Y-extent
@@ -43,7 +39,6 @@ namespace LCS
             typedef boost::multi_array_types::extent_range range;
 
         public:
-
             /* @brief Constructor for the field class.
              *
              * @param nx The number of points in x
@@ -53,7 +48,6 @@ namespace LCS
             field(unsigned nx, unsigned ny, unsigned nz) : nx_(nx), ny_(ny), nz_(nz)
             {
                 // Initialise data to be the correct size based on xDim/yDim/zDim
-
                 typename tempType::extent_gen extents;
                 this->data_.resize(extents[nx+2][ny+2][nz+2]);
 
@@ -67,11 +61,9 @@ namespace LCS
              * @param j The index of the point in y
              * @param k The index of the point in z
              */
-            Point<Type> getValue(unsigned i, unsigned j, unsigned k)
+            Point<Type> getValue(int i, int j, int k)
             {
-    
                 return data_[i][j][k];
-
             }
 
             /* @brief Set a value of the underlying array
@@ -83,13 +75,9 @@ namespace LCS
              */
             void setValue(Point<Type> value, unsigned i, unsigned j, unsigned k)
             {
-
                 data_[i][j][k] = value;
-
             }
-
     };
-
 }; // namespace
 
 #endif

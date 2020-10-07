@@ -178,26 +178,33 @@ namespace LCS
             boost::multi_array<double, 3> ftleField_;
 
             void computeFTLE(){ 
+                unsigned xExtent = pos_.getXExtent();
+                unsigned yExtent = pos_.getYExtent();
+                unsigned zExtent = pos_.getZExtent();
+                double coeff = 1./(pos_.getFinalTime() - pos_.getInitialTime());
 
-                if (useAuxiliaryGrid)
+                std::cout << "Computing the FTLE field...";
+                #pragma omp parallel for
+                for (unsigned i = 0; i < xExtent; ++i)
                 {
-                    _computeFTLEAuxiliaryGrid();
-                } else
-                {
-                    pos_.advectPosition(pos_.getAbsTol(), pos_.getRelTol());
-                    _computeFTLEFiniteDifferencing();
+                    for (unsigned j = 0; j < yExtent; ++j)
+                    {
+                        for (unsigned k = 0; k < zExtent; ++k)
+                        {
+                            // Get the eigenvalue
+                            this->ftleField_[i][j][k] = coeff * std::log(pos_.getEigenvalue(i,j,k));
+                        }
+                    }
                 }
-
+                std::cout << "done." << std::endl;
             }
 
             void writeFTLE()
             {
-
                 std::ofstream output;
                 output.open("ftleField.data");
 
                 std::cout << "Writing FTLE values to file...";
-
                 for(unsigned i = 0; i < pos_.getXExtent(); ++i)
                 {
                     for(unsigned j = 0; j < pos_.getYExtent(); ++j)
@@ -212,7 +219,6 @@ namespace LCS
                 output.close();
             }
     }; // Class
-
 }; // Namespace
 
 #endif

@@ -14,8 +14,8 @@ vals[:, 2] = np.linspace(1, 132/256, N)
 #vals[247:-1,2] = 132./256.
 newcmp = ListedColormap(vals)
 
-ftle = np.genfromtxt('bin/helicityField.data', skip_header=0).reshape((400, 400))
-ftleMask = np.genfromtxt('bin/helicityFieldMask.data', skip_header=0, dtype=int).reshape((400, 400))
+ftle = np.genfromtxt('helicity.data', skip_header=0).reshape((400, 400))
+ftleMask = np.genfromtxt('helicityMask.data', skip_header=0, dtype=int).reshape((400, 400))
 ftle = np.ma.array(ftle, mask=ftleMask == 1)
 x = np.linspace(0, 2*np.pi,num=400)
 y = np.linspace(0, 2*np.pi,num=400)

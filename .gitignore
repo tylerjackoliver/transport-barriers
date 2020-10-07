@@ -3,3 +3,6 @@
 build/
 .vscode/
 bin/
+helicity.data
+helicityMask.data
+*.data
