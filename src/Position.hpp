@@ -15,8 +15,10 @@ namespace LCS
     {
 
         private:
-
             typedef boost::multi_array_types::extent_range range;
+            double xStep = 0.0;
+            double yStep = 0.0;
+            double zStep = 0.0;
 
             template <typename T> int sgn(T val)
             {
@@ -25,7 +27,6 @@ namespace LCS
 
             void integrate(std::vector<Type>& x)
             {
-                
                 typedef std::vector<Type> state_type;
                 int sign = sgn(this->getFinalTime() - this->getInitialTime());
                 boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(this->getAbsTol(), this->getRelTol());
@@ -98,33 +99,24 @@ namespace LCS
             {
                 unsigned prog = 0;
 
+                // Get auxiliary grid sizing
+                double auxGridSizeX = this->xStep * this->auxiliaryGridSizingFactor;
+                double auxGridSizeY = this->yStep * this->auxiliaryGridSizingFactor;
+                double auxGridSizeZ = this->zStep * this->auxiliaryGridSizingFactor;
+
                 #pragma omp parallel for shared(prog)
                 for (int i = 0; i < this->nx_+2; ++i) //  Rebase to zero due to OpenMP not supporting -ve sentinels
                 {
                     for (int j = 0; j < this->ny_+2; ++j)
                     {
                         for (int k = 0; k < this->nz_+2; ++k){
-
                             Point<Type> xNext, xPrev, yNext, yPrev, zNext, zPrev;
                             Point<Type> x0Next, x0Prev, y0Next, y0Prev, z0Next, z0Prev;
-                            Point<Type> referencePoint, previousReferencePointX, previousReferencePointY, previousReferencePointZ;
+                            Point<Type> referencePoint;
                             Eigen::Matrix<Type, 3, 3> deformation, cauchy_green;
 
                             std::vector<double> reference(3), xPlus(3), xMinus(3), yPlus(3), yMinus(3), zPlus(3), zMinus(3);
                             referencePoint = this->getValue(i-1, j-1, k-1);
-                            previousReferencePointX = i > 0 ? this->getValue(i-2, j-1, k-1) : this->getValue(i,j-1,k-1) ;
-                            previousReferencePointY = j > 0 ? this->getValue(i-1, j-2, k-1) : this->getValue(i-1,j,k-1);
-                            previousReferencePointZ = k > 0 ? this->getValue(i-1, j-1, k-2) : this->getValue(i-1, j-1, k);
-
-                            double xGridSpacing = fabs(referencePoint.x - previousReferencePointX.x);
-                            double yGridSpacing = fabs(referencePoint.y - previousReferencePointY.y);
-                            double zGridSpacing = fabs(referencePoint.z - previousReferencePointZ.z); 
-
-                            // Get auxiliary grid sizing
-
-                            double auxGridSizeX = xGridSpacing * this->auxiliaryGridSizingFactor;
-                            double auxGridSizeY = yGridSpacing * this->auxiliaryGridSizingFactor;
-                            double auxGridSizeZ = zGridSpacing * this->auxiliaryGridSizingFactor;
 
                             reference[0] = referencePoint.x; reference[1] = referencePoint.y;
                             reference[2] = referencePoint.z;
@@ -144,23 +136,22 @@ namespace LCS
                             this->integrate(zMinus); zPrev.vectorToPoint(zMinus);
 
                             // deformation tensor 
-                            deformation(0,0) = (xNext.x-xPrev.x) / (x0Next.x-x0Prev.x);
-                            deformation(0,1) = (yNext.x-yPrev.x) / (y0Next.y-y0Prev.y);
-                            deformation(0,2) = (zNext.x-zPrev.x) / (z0Next.z-z0Prev.z);
+                            deformation(0,0) = (xNext.x-xPrev.x) / (2. * auxGridSizeX);
+                            deformation(0,1) = (yNext.x-yPrev.x) / (2. * auxGridSizeY);
+                            deformation(0,2) = (zNext.x-zPrev.x) / (2. * auxGridSizeZ);
                             
-                            deformation(1,0) = (xNext.y-xPrev.y) / (x0Next.x-x0Prev.x);
-                            deformation(1,1) = (yNext.y-yPrev.y) / (y0Next.y-y0Prev.y);
-                            deformation(1,2) = (zNext.y-zPrev.y) / (z0Next.z-z0Prev.z);
+                            deformation(1,0) = (xNext.y-xPrev.y) / (2. * auxGridSizeX);
+                            deformation(1,1) = (yNext.y-yPrev.y) / (2. * auxGridSizeY);
+                            deformation(1,2) = (zNext.y-zPrev.y) / (2. * auxGridSizeZ);
 
-                            deformation(2,0) = (xNext.z-xPrev.z) / (x0Next.x-x0Prev.x);
-                            deformation(2,1) = (yNext.z-yPrev.z) / (y0Next.y-y0Prev.y);
-                            deformation(2,2) = (zNext.z-zPrev.z) / (z0Next.z-z0Prev.z);
+                            deformation(2,0) = (xNext.z-xPrev.z) / (2. * auxGridSizeX);
+                            deformation(2,1) = (yNext.z-yPrev.z) / (2. * auxGridSizeY);
+                            deformation(2,2) = (zNext.z-zPrev.z) / (2. * auxGridSizeZ);
                             
                             cauchy_green = deformation.transpose() * deformation;
                             Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
                             this->eigenvalueField_[i-1][j-1][k-1] = solver.eigenvalues().maxCoeff();
                             this->eigenvectorField_[i-1][j-1][k-1] = solver.eigenvectors().col(2).real();
-
                         }
                         
                     }
@@ -278,21 +269,45 @@ namespace LCS
                 int k = -1; // due to -1 extent
 
                 // Fill in values with uniform step
-                
-                std::generate(xrange.begin(), xrange.end(), \
+                if (this->nx_ < 2)
+                {
+                    Type gap = (xmax - xmin) / (this->nx_+1);
+                    this->xStep = gap;
+                    i = 0;
+                    std::generate(xrange.begin(), xrange.end(), \
+                        [&]{ return xmin + (i++) * gap;});
+                } else
+                {
+                    this->xStep = (xmax-xmin) / (this->nx_-1);
+                    std::generate(xrange.begin(), xrange.end(), \
                         [&]{ return xmin + (i++) * (xmax-xmin) / (this->nx_-1);});
-                std::generate(yrange.begin(), yrange.end(), \
+                }
+
+                if (this->ny_ < 2)
+                {
+                    Type gap = (ymax - ymin) / (this->ny_+1);
+                    this->yStep = gap;
+                    j = 0;
+                    std::generate(yrange.begin(), yrange.end(), 
+                        [&]{ return ymin + (j++) * gap;});
+                } else
+                {
+                    this->yStep = (ymax-ymin) / (this->ny_-1);
+                    std::generate(yrange.begin(), yrange.end(), \
                         [&]{ return ymin + (j++) * (ymax-ymin) / (this->ny_-1);});
+                }
 
                 // Correction for if we're on a single z-plane (planar flow)
-
                 if (this->nz_ < 2)
                 {
                     Type gap = (zmax - zmin) / (this->nz_+1);
+                    this->zStep = gap;
+                    k = 0;
                     std::generate(zrange.begin(), zrange.end(), 
                         [&]{ return zmin + (k++) * gap;});
                 } else
                 {
+                    this->zStep = (zmax-zmin) / (this->nz_-1);
                     std::generate(zrange.begin(), zrange.end(), \
                         [&]{ return zmin + (k++) * (zmax-zmin) / (this->nz_-1);});
                 }
@@ -370,6 +385,21 @@ namespace LCS
             void setRelTol(double relTol)
             {
                 this->relTol_ = relTol;
+            }
+
+            double getXStep() const
+            {
+                return this->xStep;
+            }
+
+            double getYStep() const
+            {
+                return this->yStep;
+            }
+
+            double getZStep() const
+            {
+                return this->zStep;
             }
 
             /* @brief Advect the initial flow coordinates forward using a Burlisch-Stoer numerical integration scheme
@@ -496,7 +526,7 @@ namespace LCS
             */
             void readFromFile()
             {
-                std::ofstream input;
+                std::ifstream input;
                 input.open("field.data");
                 
                 for(unsigned i = 0; i < this->nx_; ++i)
@@ -519,7 +549,7 @@ namespace LCS
             */
             void readFromFile(std::string fname)
             {
-                std::ofstream input;
+                std::ifstream input;
                 input.open(fname);
                 
                 for(unsigned i = 0; i < this->nx_; ++i)
