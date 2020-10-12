@@ -6,3 +6,4 @@ bin/
 helicity.data
 helicityMask.data
 *.data
+scratch/

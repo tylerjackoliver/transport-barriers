@@ -11,11 +11,6 @@
 #include "Point.hpp"
 #include <iostream>
 
-/* template <typename Type>
-void advectPositionGPUDriver(field_<Type>& initPos, field_<Type>& updatedPos, double initTime, double finalTime, \
-double absTol, double relTol);
-*/
-
 template <typename Type>
 void operator<<(std::ostream& out, std::vector<Type>& val)
 {

@@ -1,3 +1,6 @@
+#ifndef __FORCE_FUNCTION_H__
+#define __FORCE_FUNCTION_H__
+
 typedef std::vector<double> state_type;
 
 void abcFlow(state_type& xIn, std::vector<double>& xdot, const double t){
@@ -65,3 +68,5 @@ void doubleGyre(state_type& x, state_type& dxdt, const double t){
     dxdt[1] = v;
 
 }
+
+#endif
