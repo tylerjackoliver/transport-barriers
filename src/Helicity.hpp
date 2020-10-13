@@ -7,6 +7,8 @@
 #include <boost/numeric/odeint/stepper/controlled_runge_kutta.hpp>
 #include <boost/numeric/odeint/stepper/runge_kutta_fehlberg78.hpp>
 #include "Functor.hpp"
+#include <unistd.h>
+#include <chrono>
 
 namespace LCS
 {
@@ -48,9 +50,10 @@ namespace LCS
             /**/
             void getDominantEigenVector(std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, 
                                         std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, std::vector<Type>&, Eigen::Vector3d&);
+            void getDominantEigenVector(std::vector<Type>&, Eigen::Vector3d&);
             void getHelicity(const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, double&);
             void integrate(std::vector<Type>&);
-            int sgn(Type&) const;
+            int sgn(Type) const;
             void writeStrainline(const std::vector<Point<Type>>&, const int) const;
     };
 
@@ -264,8 +267,14 @@ namespace LCS
 
         /* Enter into the loop */
         std::size_t numStrainlines = indices.size();
+        unsigned int strainLinesCompleted = 0;
 
-        //#pragma omp parallel for
+        std::cout << "~~~~~~~~~~~~~~~~~~~ STRAINLINE INTEGRATION ~~~~~~~~~~~~~~~~~" << std::endl;
+        std::cout << "There are " << numStrainlines << " strainlines to integrate." << std::endl;
+
+        auto timeStart = std::chrono::high_resolution_clock::now();
+
+        #pragma omp parallel for shared(strainLinesCompleted)
         for (std::size_t i = 0; i < numStrainlines; ++i)
         {
             /*
@@ -295,35 +304,36 @@ namespace LCS
             functor.previousSolution = pos_.getEigenvector(initialIndex[0], initialIndex[1], initialIndex[2]);
             functor.initialTime = pos_.getInitialTime(); // For eigenvector field!
             functor.finalTime = pos_.getFinalTime(); // For eigenvector field!
-            functor.xGridSpacing = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
-            functor.yGridSpacing = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
-            functor.zGridSpacing = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
-
-            // Initialise running helicity
-            double helicityTotal = 0.0;
-            double helicityAvg = 0.0;
-            uint64_t numSteps = 0;   // Step counter - long in case of exceptionally huge strainlines
-
-            // Was the step ok?
-            bool success = false;
-
-            // Position history of the particle
-            std::vector<Point<double>> strainline;
 
             // Steps
             double xStep = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
             double yStep = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
             double zStep = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
 
+            functor.xGridSpacing = xStep;
+            functor.yGridSpacing = yStep;
+            functor.zGridSpacing = zStep;
+
+            // Initialise running helicity
+            double helicityTotal = 0.0;
+            double helicityAvg = 0.0;
+            unsigned long numSteps = 0;
+
+            // Was the step ok?
+            boost::numeric::odeint::controlled_step_result result;
+
+            // Position history of the particle
+            std::vector<Point<double>> strainline;
+
             // Enter while loop
             while (helicityAvg < eps)
             {
                 /* Try and make a step */
                 previousStep = x0;
-                success = stepper.try_step(functor, x0, t, dt);
-                
+                result = stepper.try_step(functor, x0, t, dt);
+            
                 // If success is true - IE produced a new x, we need to know the helicity at the new point
-                if (success)
+                if (result == boost::numeric::odeint::success)
                 {
                     /*
                      * We now need to compute the gradient of the helicity field. This requires eigenvectors of the surrounding 4 points, and we therefore
@@ -352,99 +362,119 @@ namespace LCS
                     std::vector<Type> leftpZ0(3), uppZ0(3), rightpZ0(3), downpZ0(3), pZpZ0(3), pZ0(3);
 
                     std::vector<Type> leftmZ(3), upmZ(3), rightmZ(3), downmZ(3), mZmZ(3), mZ(3);
-                    std::vector<Type> leftmZ0(3), upmZ0(3), rightmZ0(3), downmZ0(3), mZmZ0(3), mZ(0);
-
-                    origin = previousStep; origin0 = origin;
-                    // Left
-                    left = origin; left[0] -= xStep; left0 = left;
-                    // Leftleft
-                    leftleft = origin; leftleft[0] -= 2. * xStep; leftleft0 = leftleft;
-                    // Right
-                    right = origin; right[0] += xStep; right0 = right;
-                    // Rightright
-                    rightright = origin; rightright[0] += 2. * xStep; rightright0 = rightright;
-                    // Up
-                    up = origin; up[1] += yStep; up0 = up;
-                    // Upup
-                    upup = origin; up[1] += 2. * yStep; upup0 = upup;
-                    // Down
-                    down = origin; down[1] -= yStep; down0 = down;
-                    // Downdown
-                    downdown = origin; downdown[1] -= 2. * yStep; downdown0 = downdown;
-                    // Leftup
-                    leftup = left; leftup[1] += yStep; leftup0 = leftup;
-                    // Leftdown
-                    leftdown = left; leftdown[1] -= yStep; leftdown0 = leftdown;
-                    // Rightup
-                    rightup = right; rightup[1] += yStep; rightup0 = rightup;
-                    // Rightdown
-                    rightdown = right; rightdown[1] -= yStep; rightdown0 = rightdown;
-                    // Left pZ
-                    leftpZ = left; leftpZ[2] += zStep; leftpZ0 = leftpZ0;
-                    // Left mZ
-                    leftmZ = left; leftmZ[2] -= zStep; leftmZ0 = leftmZ;
-                    // Right pZ
-                    rightpZ = right; rightpZ[2] += zStep; rightpZ0 = rightpZ;
-                    // Right mZ
-                    rightmZ = right; rightmZ[2] -= zStep; rightmZ0 = rightmZ;
-                    // Up pZ
-                    uppZ = up; uppZ[2] += zStep; uppZ0 = uppZ;
-                    // Up mZ
-                    upmZ = up; upmZ[2] -= zStep; upmZ0 = upmZ;
-                    // down pZ
-                    downpZ = down; downpZ[2] += zStep; downpZ0 = downpZ;
-                    // down mZ
-                    downmZ = down; downmZ[2] -= zStep; downmZ0 = downmZ;
-                    // pZ
-                    pZ = origin; pZ[2] += zStep; pZ0 = pZ;
-                    // pZpZ
-                    pZpZ = pZ; pZ[2] += zStep; pZpZ0 = pZpZ;
-                    // mZ
-                    mZ = origin; mZ[2] -= zStep; mZ0 = mZ;
-                    // mZmZ
-                    mZmZ = origin; mZmZ[2] -= zStep; mZmZ0 = mZmZ;
-
-                    // Now we need to integrate each of these points forwards
-                    this->integrate(origin); this->integrate(left); this->integrate(leftleft); this->integrate(right); this->integrate(rightright);
-                    this->integrate(down); this->integrate(downdown); this->integrate(up); this->integrate(upup);
-                    this->integrate(pZ); this->integrate(pZpZ); this->integrate(mZ); this->integrate(mZmZ);
-
-                    this->integrate(leftup); this->integrate(leftdown); this->integrate(rightup); this->integrate(rightdown);
-                    this->integrate(leftpZ); this->integrate(rightpZ); this->integrate(downpZ); this->integrate(uppZ);
-                    this->integrate(leftmZ); this->integrate(rightmZ); this->integrate(downmZ); this->integrate(upmZ);
+                    std::vector<Type> leftmZ0(3), upmZ0(3), rightmZ0(3), downmZ0(3), mZmZ0(3), mZ0(3);
 
                     // Now want to integrate each of the 'x' points forward to get the dominant eigenvector
                     Eigen::Vector3d leftEV, upEV, rightEV, downEV, pZEV, mZEV, originEV;
-    
-                    // Left
-                    this->getDominantEigenVector(&leftleft, &leftup, &origin, &leftdown, &leftpZ, &leftmZ, 
-                                                 &leftleft0, &leftup0, &origin0, &leftdown0, &leftpZ0, &leftmZ0, &leftEV);
+
                     // Up
-                    this->getDominantEigenVector(&leftup, &upup, &rightup, &origin, &uppZ, &upmZ, 
-                                                 &leftup0, &upup0, &rightup0, &origin0, &uppZ0, &upmZ0, &upEV);
-                    // Right
-                    this->getDominantEigenVector(&origin, &rightup, &rightright, &rightdown, &rightpZ, &rightmZ, 
-                                                 &origin0, &rightup0, &rightright0, &rightdown0, &rightpZ0, &rightmZ0, &rightEV);
-                    // Down
-                    this->getDominantEigenVector(&leftdown, &origin, &rightdown, &downdown, &downpZ, &downmZ, 
-                                                 &leftdown0, &origin0, &rightdown0, &downdown0, &downpZ0, &downmZ0, &downEV);
-                    // pZ
-                    this->getDominantEigenVector(&leftpZ, &uppZ, &rightpZ, &downpZ, &pZpZ, &origin, 
-                                                 &leftpZ0, &uppZ0, &rightpZ0, &downpZ0, &pZpZ0, &origin0, &pZEV);
-                    // mZ
-                    this->getDominantEigenVector(&leftmZ, &upmZ, &rightmZ, &downmZ, &mZmZ, &origin, 
-                                                 &leftmZ0, &upmZ0, &rightmZ0, &downmZ0, &mZmZ0, &origin0, &mZEV);
-                    // Origin
-                    this->getDominantEigenVector(&left, &up, &right, &down, &pZ, &mZ, &left0, &up0, &right0, &down0, &pZ0, &mZ0, &originEV);
+                    origin = previousStep;
+                    up = origin; up[1] += pos_.getYStep(); this->getDominantEigenVector(up, upEV);
+                    down = origin; down[1] -= pos_.getYStep(); this->getDominantEigenVector(down, downEV);
+                    left = origin; left[0] -= pos_.getXStep(); this->getDominantEigenVector(left, leftEV);
+                    right = origin; right[0] += pos_.getXStep(); this->getDominantEigenVector(right, rightEV);
+                    pZ = origin; pZ[2] += pos_.getZStep(); this->getDominantEigenVector(pZ, pZEV);
+                    mZ = origin; mZ[2] -= pos_.getZStep(); this->getDominantEigenVector(mZ, mZEV);
+                    this->getDominantEigenVector(origin, originEV);
+
+                    // origin = previousStep; origin0 = origin;
+                    // // Left
+                    // left = origin; left[0] -= xStep; left0 = left;
+                    // // Leftleft
+                    // leftleft = origin; leftleft[0] -= 2. * xStep; leftleft0 = leftleft;
+                    // // Right
+                    // right = origin; right[0] += xStep; right0 = right;
+                    // // Rightright
+                    // rightright = origin; rightright[0] += 2. * xStep; rightright0 = rightright;
+                    // // Up
+                    // up = origin; up[1] += yStep; up0 = up;
+                    // // Upup
+                    // upup = origin; upup[1] += 2. * yStep; upup0 = upup;
+                    // // Down
+                    // down = origin; down[1] -= yStep; down0 = down;
+                    // // Downdown
+                    // downdown = origin; downdown[1] -= 2. * yStep; downdown0 = downdown;
+                    // // Leftup
+                    // leftup = left; leftup[1] += yStep; leftup0 = leftup;
+                    // // Leftdown
+                    // leftdown = left; leftdown[1] -= yStep; leftdown0 = leftdown;
+                    // // Rightup
+                    // rightup = right; rightup[1] += yStep; rightup0 = rightup;
+                    // // Rightdown
+                    // rightdown = right; rightdown[1] -= yStep; rightdown0 = rightdown;
+                    // // Left pZ
+                    // leftpZ = left; leftpZ[2] += zStep; leftpZ0 = leftpZ0;
+                    // // Left mZ
+                    // leftmZ = left; leftmZ[2] -= zStep; leftmZ0 = leftmZ;
+                    // // Right pZ
+                    // rightpZ = right; rightpZ[2] += zStep; rightpZ0 = rightpZ;
+                    // // Right mZ
+                    // rightmZ = right; rightmZ[2] -= zStep; rightmZ0 = rightmZ;
+                    // // Up pZ
+                    // uppZ = up; uppZ[2] += zStep; uppZ0 = uppZ;
+                    // // Up mZ
+                    // upmZ = up; upmZ[2] -= zStep; upmZ0 = upmZ;
+                    // // down pZ
+                    // downpZ = down; downpZ[2] += zStep; downpZ0 = downpZ;
+                    // // down mZ
+                    // downmZ = down; downmZ[2] -= zStep; downmZ0 = downmZ;
+                    // // pZ
+                    // pZ = origin; pZ[2] += zStep; pZ0 = pZ;
+                    // // pZpZ
+                    // pZpZ = pZ; pZ[2] += zStep; pZpZ0 = pZpZ;
+                    // // mZ
+                    // mZ = origin; mZ[2] -= zStep; mZ0 = mZ;
+                    // // mZmZ
+                    // mZmZ = mZ; mZmZ[2] -= zStep; mZmZ0 = mZmZ;
+
+                    // Now we need to integrate each of these points forwards
+                    // this->integrate(origin); this->integrate(left); this->integrate(leftleft); this->integrate(right); this->integrate(rightright);
+                    // this->integrate(down); this->integrate(downdown); this->integrate(up); this->integrate(upup);
+                    // this->integrate(pZ); this->integrate(pZpZ); this->integrate(mZ); this->integrate(mZmZ);
+
+                    // this->integrate(leftup); this->integrate(leftdown); this->integrate(rightup); this->integrate(rightdown);
+                    // this->integrate(leftpZ); this->integrate(rightpZ); this->integrate(downpZ); this->integrate(uppZ);
+                    // this->integrate(leftmZ); this->integrate(rightmZ); this->integrate(downmZ); this->integrate(upmZ);
+
+                    // Left
+                    // this->getDominantEigenVector(leftleft, leftup, origin, leftdown, leftpZ, leftmZ, 
+                    //                              leftleft0, leftup0, origin0, leftdown0, leftpZ0, leftmZ0, leftEV);
+                    
+                    // // Up
+                    // this->getDominantEigenVector(leftup, upup, rightup, origin, uppZ, upmZ, 
+                    //                              leftup0, upup0, rightup0, origin0, uppZ0, upmZ0, upEV);
+                    // // Right
+                    // this->getDominantEigenVector(origin, rightup, rightright, rightdown, rightpZ, rightmZ, 
+                    //                              origin0, rightup0, rightright0, rightdown0, rightpZ0, rightmZ0, rightEV);
+                    // // Down
+                    // this->getDominantEigenVector(leftdown, origin, rightdown, downdown, downpZ, downmZ, 
+                    //                              leftdown0, origin0, rightdown0, downdown0, downpZ0, downmZ0, downEV);
+                    // // pZ
+                    // this->getDominantEigenVector(leftpZ, uppZ, rightpZ, downpZ, pZpZ, origin, 
+                    //                              leftpZ0, uppZ0, rightpZ0, downpZ0, pZpZ0, origin0, pZEV);
+                    // // mZ
+                    // this->getDominantEigenVector(leftmZ, upmZ, rightmZ, downmZ, origin, mZmZ, 
+                    //                              leftmZ0, upmZ0, rightmZ0, downmZ0, origin0, mZmZ0, mZEV);
+                    // // Origin
+                    // this->getDominantEigenVector(left, up, right, down, pZ, mZ, left0, up0, right0, down0, pZ0, mZ0, originEV);
 
                     // Now get the helicity
                     double helicity;
-                    this->getHelicity(&originEV, &leftEV, &upEV, &rightEV, &downEV, &pzEV, &mZEV, &helicity);
-
+                    // std::cout << originEV << std::endl;
+                    // std::cout << leftEV << std::endl;
+                    // std::cout << upEV << std::endl;
+                    // std::cout << rightEV << std::endl;
+                    // std::cout << downEV << std::endl;
+                    // std::cout << pZEV << std::endl;
+                    // std::cout << mZEV << std::endl;
+                    this->getHelicity(originEV, leftEV, upEV, rightEV, downEV, pZEV, mZEV, helicity);
+                    // std::cout << "The helicity is" << helicity << std::endl;
+                    // exit(-1);
                     // Update the running average
                     numSteps++;
                     helicityTotal += helicity;
                     helicityAvg = helicityTotal / static_cast<double>(numSteps);
+                    // std::cout << "After " << numSteps << " steps the helicity is " << helicityAvg << std::endl;
 
                     // Add the updated position to our history
                     Point<Type> latestPoint;
@@ -454,25 +484,31 @@ namespace LCS
                     strainline.push_back(latestPoint);
 
                     // Update functor class with latest solution
-                    functor.previousSolution = x0;
-
+                    functor.previousSolution = originEV;
+                    usleep(1e6);
                 } // if(success)
+                // else std::cout << "Damn! Need to adjust timestep." << std::endl;
             } // while
-            this->writeStrainline(&strainline, i);
+            this->writeStrainline(strainline, i+1);
+            #pragma omp atomic
+            strainLinesCompleted++;
+            std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps." << std::endl;
         } // for
+        auto timeEnd = std::chrono::high_resolution_clock::now();
+        std::cout << "Integrating " << numStrainlines << " strainlines complete. Time required: " << std::chrono::duration_cast<std::chrono::minutes>(timeEnd-timeStart).count() << " minutes." << std::endl;
     } // class member function
 
     template <typename Type>
     void Helicity<Type>::integrate(std::vector<Type> &x)
     {
-                typedef std::vector<Type> state_type;
-                int sign = this->sgn(pos_.getFinalTime() - pos_.getInitialTime());
-                boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(pos_.getAbsTol(), pos_.getRelTol());
-                boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, pos_.getInitialTime(), pos_.getFinalTime(), sign*.01, abcFlowObserver);
+        typedef std::vector<Type> state_type;
+        int sign = this->sgn(pos_.getFinalTime() - pos_.getInitialTime());
+        boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(pos_.getAbsTol(), pos_.getRelTol());
+        boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, pos_.getInitialTime(), pos_.getFinalTime(), sign*.01, abcFlowObserver);
     }
 
     template <typename Type>
-    int Helicity<Type>::sgn(Type &in) const
+    int Helicity<Type>::sgn(Type in) const
     {
         return (in > 0) - (in < 0);
     }
@@ -483,7 +519,7 @@ namespace LCS
     {
         /* Construct CGST */
 
-        Eigen::Matrix3d<Type> deformation, cgst;
+        Eigen::Matrix3d deformation, cauchy_green;
 
         // Deformation tensor
         deformation(0,0) = (right[0]-left[0]) / (right0[0]-left0[0]);
@@ -504,11 +540,55 @@ namespace LCS
     }
 
     template <typename Type>
+    void Helicity<Type>::getDominantEigenVector(std::vector<Type>& x0, Eigen::Vector3d& ev)
+    {
+        Eigen::Matrix<Type, 3, 3> deformation, cauchy_green;
+        std::vector<double> xPlus(3), xMinus(3), yPlus(3), yMinus(3), zPlus(3), zMinus(3);
+
+        double auxGridSizeX = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
+        double auxGridSizeY = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
+        double auxGridSizeZ = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
+
+        xPlus = x0; xPlus[0] += auxGridSizeX;
+        xMinus = x0; xMinus[0] -= auxGridSizeX;
+        yPlus = x0; yPlus[1] += auxGridSizeY;
+        yMinus = x0; yMinus[1] -= auxGridSizeY;
+        zPlus = x0; zPlus[2] += auxGridSizeZ;
+        zMinus = x0; zMinus[2] -= auxGridSizeZ;
+
+        this->integrate(xPlus);
+        this->integrate(xMinus);
+        this->integrate(yPlus);
+        this->integrate(yMinus);
+        this->integrate(zPlus);
+        this->integrate(zMinus);
+
+        // deformation tensor 
+        deformation(0,0) = (xPlus[0]-xMinus[0]) / (2. * auxGridSizeX);
+        deformation(0,1) = (yPlus[0]-yMinus[0]) / (2. * auxGridSizeY);
+        deformation(0,2) = (zPlus[0]-zMinus[0]) / (2. * auxGridSizeZ);
+        
+        deformation(1,0) = (xPlus[1]-xMinus[1]) / (2. * auxGridSizeX);
+        deformation(1,1) = (yPlus[1]-yMinus[1]) / (2. * auxGridSizeY);
+        deformation(1,2) = (zPlus[1]-zMinus[1]) / (2. * auxGridSizeZ);
+
+        deformation(2,0) = (xPlus[2]-xMinus[2]) / (2. * auxGridSizeX);
+        deformation(2,1) = (yPlus[2]-yMinus[2]) / (2. * auxGridSizeY);
+        deformation(2,2) = (zPlus[2]-zMinus[2]) / (2. * auxGridSizeZ);
+        
+        cauchy_green = deformation.transpose() * deformation;
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
+        ev = solver.eigenvectors().col(2).real();
+    }
+
+    template <typename Type>
     void Helicity<Type>::getHelicity(const Eigen::Vector3d &origin, const Eigen::Vector3d &left, const Eigen::Vector3d &up, const Eigen::Vector3d &right, const Eigen::Vector3d &down, const Eigen::Vector3d &pZ, const Eigen::Vector3d &mZ, double &helicity)
     {
-        double xGridSize = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
-        double yGridSize = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
-        double zGridSize = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
+        Eigen::Vector3d curl;
+
+        double xGridSize = pos_.getXStep();
+        double yGridSize = pos_.getYStep();
+        double zGridSize = pos_.getZStep();
 
         double dfzdy = (up(2) - down(2)) / (2. * yGridSize);
         double dfydz = (pZ(1) - mZ(1)) / (2. * zGridSize);
@@ -531,10 +611,10 @@ namespace LCS
     {
         std::ofstream output;
         // Get buffer size required
-        std::size_t bufLen = std::snprintf(nullptr, 0, "strainline_%4d", index);
+        std::size_t bufLen = std::snprintf(nullptr, 0, "../strainlines/strainlines_%d", index);
         // Create new character array; using char* allocates on heap in fringe case of huge fnames
         char *buf = new char[bufLen+1];
-        std::snprintf(buf, bufLen+1, "strainlines_%4d", i);
+        snprintf(buf, bufLen+1, "../strainlines/strainlines_%d", index);
         // Open file
         output.open(buf);
         // Get vector size
@@ -553,4 +633,13 @@ namespace LCS
     }
 
 }; // namespace
+
+template <typename Type>
+std::ostream& operator<<(std::vector<Type>& in, const std::ostream& out)
+{
+    out << "(";
+    for (unsigned i = 0; i < in.size(); ++i) out << in[i] << ",";
+    return out << ")";
+}
+
 #endif

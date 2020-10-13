@@ -1,46 +1,51 @@
 #ifndef __FUNCTOR_CLASS_H__
 #define __FUNCTOR_CLASS_H__
 
-#include<eigen3/Eigen/Eigenvalues>
+#include <eigen3/Eigen/Eigenvalues>
 #include "forceFunction.hpp"
 #include <boost/numeric/odeint.hpp>
 #include "Helpers.hpp"
 
-template <typename stateType, typename timeType>
+
 class functorClass
 {
+    private:
+        /* Return the sign of a given input x; return [1, 0, -1] */
+        template <typename timeType>
+        int sgn(timeType val)
+        {
+            return (val > 0) - (val < 0);
+        }
+
+        /* Integrate a given state x forward from initialTime to finalTime */
+        // template <typename Type>
+        void integrate (std::vector<double>& x)
+        {
+            typedef std::vector<double> state_type;
+            int sign = sgn(this->finalTime - this->initialTime);
+            // boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(this->absTol, this->relTol);
+            // boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, this->initialTime, this->finalTime, sign*.01, abcFlowObserver);
+        }
+
     public:
         Eigen::Vector3d previousSolution;   // For globally smooth strainlines
-        timeType initialTime;               // For numerical integration
-        timeType finalTime;                 // ""
+        double initialTime;               // For numerical integration
+        double finalTime;                 // ""
         double xGridSpacing;                // For computing derivatives
         double yGridSpacing;                // ""
         double zGridSpacing;                // ""
         double absTol = 1e-012;             // Absolute integration tolerance
         double relTol = 1e-012;             // Relative integration tolerance
-    private:
-        int sgn(const timeType val) const;
-        void integrate(stateType& x);
 
-    /* Return the sign of a given input x; return [1, 0, -1] */
-    int sgn(const timeType val) const
-    {
-        return (val > 0) - (val < 0);
-    }
-
-    /* Integrate a given state x forward from initialTime to finalTime */
-    void integrate (stateType &x)
-    {
-        int sign = sgn(this->finalTime - this->initialTime);
-        boost::numeric::odeint::bulirsch_stoer<stateType> bulirsch_stepper(this->absTol, this->relTol);
-        boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, this->initialTime, this->finalTime, sign*.01, abcFlowObserver);
-    }
+    /* Class constructor */
+    functorClass(){}; // Blank
 
     /* requires arguments to be vectors */
-    void operator()(const stateType& x, stateType& xdot, timeType t) const
+    template <typename Type>
+    void operator()(std::vector<Type>& x, std::vector<Type>& xdot, Type t)
     {
         /* We need to know the direction of the eigenvector field at this point - therefore, construct a grid around this initial point and integrate the trajectories forward */
-        stateType left(3), up(3), right(3), down(3), pZ(3), mZ(3);
+        std::vector<double> left(3), up(3), right(3), down(3), pZ(3), mZ(3);
         Eigen::Vector3d direction;
 
         left = x; left[0] -= xGridSpacing;
@@ -59,10 +64,10 @@ class functorClass
         this->integrate(mZ);
 
         // Compute the eigenvector
-        Helpers::getDominantEigenVector(&left, &up, &right, &down, &xGridSpacing, &yGridSpacing, &zGridSpacing, &direction)
+        Helpers::getDominantEigenVector(left, up, right, down, pZ, mZ, xGridSpacing, yGridSpacing, zGridSpacing, direction);
 
         // Create the derivative vector
-        timeType innerProduct = this->previousSolution.dot(direction);
+        Type innerProduct = this->previousSolution.dot(direction);
         Eigen::Vector3d derivative = innerProduct * direction;
         xdot[0] = derivative[0]; 
         xdot[1] = derivative[1];

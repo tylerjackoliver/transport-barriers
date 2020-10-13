@@ -11,8 +11,7 @@ namespace Helpers
     void getDominantEigenVector(vecType& left, vecType& up, vecType& right, vecType& down, vecType &pZ, vecType &mZ, scalarType &xGridSpacing, scalarType &yGridSpacing, scalarType &zGridSpacing, Eigen::Vector3d& ev)
     {
         /* Construct CGST */
-
-        Eigen::Matrix3d<vecType> deformation, cgst;
+        Eigen::Matrix3d deformation, cauchy_green;
 
         // Deformation tensor
         deformation(0,0) = (right[0]-left[0]) / (2. * xGridSpacing);

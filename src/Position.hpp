@@ -1,7 +1,7 @@
 #ifndef __POSITION_H__
 #define __POSITION_H__
 
-#include "field.hpp"
+#include "Field.hpp"
 
     /* @brief Field of particle positions
     * @tparam T numeric type of the field
