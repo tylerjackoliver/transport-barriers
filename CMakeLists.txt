@@ -23,6 +23,7 @@ add_executable(strainlines
 #target_compile_options(strainlines PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-qopenmp -x=AVX -Wall -O3 -mkl>)# -DNDEBUG -DBOOST_UBLAS_NDEBUG -DBOOST_DISABLE_ASSERTS -DARMA_NO_DEBUG -mkl>)
 
 target_compile_options(strainlines PRIVATE -qopenmp -Wall -O2 -mkl)
+#target_compile_options(strainlines PRIVATE -qopenmp -Wall -g -O0 -mkl)
 
 #>> Add includes
 

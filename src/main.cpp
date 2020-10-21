@@ -24,7 +24,7 @@ int main(void)
     helicityField.writeHelicityBelowThreshold(1.e-04);
     helicityField.getHelicityBelowThreshold(1e-04, indices);
     helicityField.writeSeedPoints(indices);
-    // helicityField.filterSeedPoints(indices);
+    helicityField.filterSeedPoints(indices);
     helicityField.integrateStrainLines(indices, 1e-04); // indices, tolerance
 
     return 0;

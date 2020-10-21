@@ -31,6 +31,44 @@ namespace Helpers
         ev = solver.eigenvectors().col(2).real();
     }
 
+    template <typename vecType, typename scalarType>
+    void getDominantEigenvectorAndEigenvalue(vecType& left, vecType& up, vecType& right, vecType& down, vecType &pZ, vecType &mZ, scalarType &xGridSpacing, scalarType &yGridSpacing, scalarType &zGridSpacing, Eigen::Vector3d& ev, double& dominantEigenvalue, double& minimumEigenvalue)
+    {
+        /* Construct CGST */
+        Eigen::Matrix3d deformation, cauchy_green;
+
+        // Deformation tensor
+        deformation(0,0) = (right[0]-left[0]) / (2. * xGridSpacing);
+        deformation(0,1) = (up[0]-down[0]) / (2. * yGridSpacing);
+        deformation(0,2) = (pZ[0]-mZ[0]) / (2. * zGridSpacing);
+        
+        deformation(1,0) = (right[1]-left[1]) / (2. * xGridSpacing);
+        deformation(1,1) = (up[1]-down[1]) / (2. * yGridSpacing);
+        deformation(1,2) = (pZ[1]-mZ[1]) / (2. * zGridSpacing);
+
+        deformation(2,0) = (right[2]-left[2]) / (2. * xGridSpacing);
+        deformation(2,1) = (up[2]-down[2]) / (2. * yGridSpacing);
+        deformation(2,2) = (pZ[2]-mZ[2]) / (2. * zGridSpacing);
+
+        // std::cout << "r" << std::endl; std::cout << right;
+        // std::cout << std::endl << "l " << std::endl;
+        // std::cout << left;
+        // std::cout << std::endl << "u " << std::endl;
+        // std::cout << up;
+        // std::cout << std::endl << "d " << std::endl;
+        // std::cout << down;
+        // std::cout << std::endl << "p " << std::endl;
+        // std::cout << pZ;
+        // std::cout << std::endl << "m " << std::endl;
+        // std::cout << mZ;
+                            
+        cauchy_green = deformation.transpose() * deformation;
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
+        ev = solver.eigenvectors().col(2).real();
+        dominantEigenvalue = solver.eigenvalues().maxCoeff();
+        minimumEigenvalue = solver.eigenvalues().minCoeff();
+    }
+
 }
 
 #endif

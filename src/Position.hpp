@@ -19,6 +19,12 @@ namespace LCS
             double xStep = 0.0;
             double yStep = 0.0;
             double zStep = 0.0;
+            double xMin = 0.0;
+            double xMax = 0.0;
+            double yMin = 0.0;
+            double yMax = 0.0;
+            double zMin = 0.0;
+            double zMax = 0.0;
 
             template <typename T> int sgn(T val)
             {
@@ -208,6 +214,36 @@ namespace LCS
                 return this->data_[i][j][k];
             }
 
+            Type getXMax()
+            {
+                return this->xMax;
+            }
+
+            Type getXMin()
+            {
+                return this->xMin;
+            }
+
+            Type getYMin()
+            {
+                return this->yMin;
+            }
+
+            Type getYMax()
+            {
+                return this->yMax;
+            }
+
+            Type getZMin()
+            {
+                return this->zMin;
+            }
+
+            Type getZMax()
+            {
+                return this->zMax;
+            }
+
             /* Get updated position of an entry in the field.
 
             @param[in] i Index of the grid in the x-direction
@@ -236,6 +272,15 @@ namespace LCS
                 {
                     throw std::domain_error("Input ranges in setAll do not match.");
                 }
+
+                this->xMin = xrange[0];
+                this->xMax = xrange[xrange.size()-1];
+
+                this->yMin = yrange[0];
+                this->yMax = yrange[yrange.size()-1];
+
+                this->zMin = zrange[0];
+                this->zMax = zrange[zrange.size()-1];
 
                 // Add data to array
                 #pragma omp parallel for

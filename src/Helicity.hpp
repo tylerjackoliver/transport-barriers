@@ -274,16 +274,18 @@ namespace LCS
 
         auto timeStart = std::chrono::high_resolution_clock::now();
 
-        #pragma omp parallel for shared(strainLinesCompleted)
+        // #pragma omp parallel for shared(strainLinesCompleted)
         for (std::size_t i = 0; i < numStrainlines; ++i)
         {
             /*
             * Define the integrator. Make it a controlled stepper, so the time-step is adjusted if our initial time-step violates
             * initial accuracy constraints.
             */
-            typedef std::vector<Type> state_type;
-            boost::numeric::odeint::runge_kutta_fehlberg78<state_type> method;
-            auto stepper = boost::numeric::odeint::make_controlled(/*reltol*/1e-012, /*abstol*/1e-012, method);
+            typedef std::vector<double> state_type;
+            // boost::numeric::odeint::runge_kutta_fehlberg78<state_type> method;
+            boost::numeric::odeint::runge_kutta_dopri5<state_type> method;
+            auto stepper = boost::numeric::odeint::make_controlled(/*reltol*/1e-05, /*abstol*/1e-05, method);
+            boost::numeric::odeint::runge_kutta_dopri5<state_type> step2;
             
             // Extract the initial condition
             std::vector<int> initialIndex = indices[i];
@@ -295,13 +297,23 @@ namespace LCS
 
             // Initialise initial time, current time, time-step 
             double t = 0.0;
-            double dt = 0.01; // Guess
+            double dt = 0.001; // Guess
 
             // Instantiate functor class
             functorClass functor;
 
             // Set problem parameters - initial eigenvector & integration time for eigenvector field
-            functor.previousSolution = pos_.getEigenvector(initialIndex[0], initialIndex[1], initialIndex[2]);
+            Eigen::Vector3d initNormal, initUnitNormal;
+            Point<Type> initpZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] + 1);
+            Point<Type> initmZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] - 1);
+        
+            initNormal[0] = initpZ.x - initmZ.x;
+            initNormal[1] = initpZ.y - initmZ.y;
+            initNormal[2] = initpZ.z - initmZ.z;
+
+            initUnitNormal = initNormal.normalized();
+
+            functor.previousSolution = (-1) * initUnitNormal.cross(pos_.getEigenvector(initialIndex[0], initialIndex[1], initialIndex[2]));
             functor.initialTime = pos_.getInitialTime(); // For eigenvector field!
             functor.finalTime = pos_.getFinalTime(); // For eigenvector field!
 
@@ -317,7 +329,10 @@ namespace LCS
             // Initialise running helicity
             double helicityTotal = 0.0;
             double helicityAvg = 0.0;
+            double pi = 4.0 * std::atan(1.0);
+            double length = 0.0;
             unsigned long numSteps = 0;
+            const unsigned long long maxSteps = 250e3;
 
             // Was the step ok?
             boost::numeric::odeint::controlled_step_result result;
@@ -331,10 +346,17 @@ namespace LCS
                 /* Try and make a step */
                 previousStep = x0;
                 result = stepper.try_step(functor, x0, t, dt);
+                dt = std::min(dt, 0.01);
+                // dt = std::max(dt, 0.00001);
+                // x0 = previousStep;
+                // t = prevT;
+                // step2.do_step(functor, x0, t, dt);
+                // std::cout << "dt is now " << dt << std::endl;
             
                 // If success is true - IE produced a new x, we need to know the helicity at the new point
                 if (result == boost::numeric::odeint::success)
                 {
+
                     /*
                      * We now need to compute the gradient of the helicity field. This requires eigenvectors of the surrounding 4 points, and we therefore
                      * need to perform a total of 13 integrations. If an eigenvector point is x, and a 'normal' integral point is '.', the structure is:
@@ -483,16 +505,48 @@ namespace LCS
                     latestPoint.z = x0[2];
                     strainline.push_back(latestPoint);
 
-                    // Update functor class with latest solution
-                    functor.previousSolution = originEV;
-                    usleep(1e6);
+                    // Update functor class with latest solution+
+                    Eigen::Vector3d normal, unitNormal;
+
+                    for (unsigned j = 0; j < pZ.size(); ++j)
+                    {
+                        normal[j] = pZ[j] - mZ[j];
+                    }
+
+                    unitNormal = normal.normalized();
+                    Eigen::Vector3d newSol = unitNormal.cross(originEV);
+                    double innerProduct = functor.previousSolution.dot(newSol);
+                    std::vector<double> diffVec(3);
+                    std::transform(x0.begin(), x0.end(), previousStep.begin(), diffVec.begin(), std::minus<double>());
+                    length += std::sqrt(diffVec[0] * diffVec[0] + diffVec[1]*diffVec[1] + diffVec[2]*diffVec[2]);
+                    // std::cout << diffVec;
+                    // std::cout << " " << i << std::endl;
+                    functor.previousSolution = sgn(innerProduct) * newSol; // Flip direction if required
+
+                    // Fix maximum number of steps
+                    if (numSteps > maxSteps) helicityAvg = 100000000.;
+
+                    // Fix on length
+                    if (length >= 10 * pi) helicityAvg = 100000000.;
+
+                    if (i==258)
+                    {
+                        std::cout << "The helicity is " << helicity << " at step " << numSteps << "with timestep" << dt << " at point " << x0[0] << "," << x0[1] << "," << x0[2] << std::endl;
+                    }
+
+                    // Check outside of the domain first
+                    if (x0[0] < pos_.getXMin() ||  x0[0] > pos_.getXMax() || x0[1] < pos_.getYMin() || x0[1] > pos_.getYMax() || x0[2] < pos_.getYMin() || x0[2] > pos_.getYMax())
+                    {
+                        helicityAvg = 10000000.;
+                    }
+                    // std::cout << "After " << numSteps << " for strainline " << i << " the helicity is " << helicityAvg << std::endl;
                 } // if(success)
                 // else std::cout << "Damn! Need to adjust timestep." << std::endl;
             } // while
             this->writeStrainline(strainline, i+1);
             #pragma omp atomic
             strainLinesCompleted++;
-            std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps." << std::endl;
+            std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps. The length was " << length << std::endl;
         } // for
         auto timeEnd = std::chrono::high_resolution_clock::now();
         std::cout << "Integrating " << numStrainlines << " strainlines complete. Time required: " << std::chrono::duration_cast<std::chrono::minutes>(timeEnd-timeStart).count() << " minutes." << std::endl;
