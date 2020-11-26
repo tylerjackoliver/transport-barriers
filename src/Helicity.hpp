@@ -191,8 +191,6 @@ namespace LCS
         {
             xLines[i] = (i+1) * (maxX-minX) / (xLines.size()+1);
             yLines[i] = (i+1) * (maxY-minY) / (yLines.size()+1);
-            // std::cout << xLines[i] << std::endl;
-            // std::cout << yLines[i] << std::endl;
         }
 
         // Now check intersections with the lines
@@ -282,7 +280,6 @@ namespace LCS
             * initial accuracy constraints.
             */
             typedef std::vector<double> state_type;
-            // boost::numeric::odeint::runge_kutta_fehlberg78<state_type> method;
             boost::numeric::odeint::runge_kutta_dopri5<state_type> method;
             auto stepper = boost::numeric::odeint::make_controlled(/*reltol*/1e-05, /*abstol*/1e-05, method);
             boost::numeric::odeint::runge_kutta_dopri5<state_type> step2;
@@ -327,11 +324,11 @@ namespace LCS
             functor.zGridSpacing = zStep;
 
             // Initialise running helicity
-            double helicityTotal = 0.0;
-            double helicityAvg = 0.0;
+            double helicityTotal = this->helicityField_[initialIndex[0]][initialIndex[1]][initialIndex[2]];
+            double helicityAvg = helicityTotal;
             double pi = 4.0 * std::atan(1.0);
             double length = 0.0;
-            unsigned long numSteps = 0;
+            unsigned long numSteps = 1;
             const unsigned long long maxSteps = 250e3;
 
             // Was the step ok?
@@ -399,104 +396,13 @@ namespace LCS
                     mZ = origin; mZ[2] -= pos_.getZStep(); this->getDominantEigenVector(mZ, mZEV);
                     this->getDominantEigenVector(origin, originEV);
 
-                    // origin = previousStep; origin0 = origin;
-                    // // Left
-                    // left = origin; left[0] -= xStep; left0 = left;
-                    // // Leftleft
-                    // leftleft = origin; leftleft[0] -= 2. * xStep; leftleft0 = leftleft;
-                    // // Right
-                    // right = origin; right[0] += xStep; right0 = right;
-                    // // Rightright
-                    // rightright = origin; rightright[0] += 2. * xStep; rightright0 = rightright;
-                    // // Up
-                    // up = origin; up[1] += yStep; up0 = up;
-                    // // Upup
-                    // upup = origin; upup[1] += 2. * yStep; upup0 = upup;
-                    // // Down
-                    // down = origin; down[1] -= yStep; down0 = down;
-                    // // Downdown
-                    // downdown = origin; downdown[1] -= 2. * yStep; downdown0 = downdown;
-                    // // Leftup
-                    // leftup = left; leftup[1] += yStep; leftup0 = leftup;
-                    // // Leftdown
-                    // leftdown = left; leftdown[1] -= yStep; leftdown0 = leftdown;
-                    // // Rightup
-                    // rightup = right; rightup[1] += yStep; rightup0 = rightup;
-                    // // Rightdown
-                    // rightdown = right; rightdown[1] -= yStep; rightdown0 = rightdown;
-                    // // Left pZ
-                    // leftpZ = left; leftpZ[2] += zStep; leftpZ0 = leftpZ0;
-                    // // Left mZ
-                    // leftmZ = left; leftmZ[2] -= zStep; leftmZ0 = leftmZ;
-                    // // Right pZ
-                    // rightpZ = right; rightpZ[2] += zStep; rightpZ0 = rightpZ;
-                    // // Right mZ
-                    // rightmZ = right; rightmZ[2] -= zStep; rightmZ0 = rightmZ;
-                    // // Up pZ
-                    // uppZ = up; uppZ[2] += zStep; uppZ0 = uppZ;
-                    // // Up mZ
-                    // upmZ = up; upmZ[2] -= zStep; upmZ0 = upmZ;
-                    // // down pZ
-                    // downpZ = down; downpZ[2] += zStep; downpZ0 = downpZ;
-                    // // down mZ
-                    // downmZ = down; downmZ[2] -= zStep; downmZ0 = downmZ;
-                    // // pZ
-                    // pZ = origin; pZ[2] += zStep; pZ0 = pZ;
-                    // // pZpZ
-                    // pZpZ = pZ; pZ[2] += zStep; pZpZ0 = pZpZ;
-                    // // mZ
-                    // mZ = origin; mZ[2] -= zStep; mZ0 = mZ;
-                    // // mZmZ
-                    // mZmZ = mZ; mZmZ[2] -= zStep; mZmZ0 = mZmZ;
-
-                    // Now we need to integrate each of these points forwards
-                    // this->integrate(origin); this->integrate(left); this->integrate(leftleft); this->integrate(right); this->integrate(rightright);
-                    // this->integrate(down); this->integrate(downdown); this->integrate(up); this->integrate(upup);
-                    // this->integrate(pZ); this->integrate(pZpZ); this->integrate(mZ); this->integrate(mZmZ);
-
-                    // this->integrate(leftup); this->integrate(leftdown); this->integrate(rightup); this->integrate(rightdown);
-                    // this->integrate(leftpZ); this->integrate(rightpZ); this->integrate(downpZ); this->integrate(uppZ);
-                    // this->integrate(leftmZ); this->integrate(rightmZ); this->integrate(downmZ); this->integrate(upmZ);
-
-                    // Left
-                    // this->getDominantEigenVector(leftleft, leftup, origin, leftdown, leftpZ, leftmZ, 
-                    //                              leftleft0, leftup0, origin0, leftdown0, leftpZ0, leftmZ0, leftEV);
-                    
-                    // // Up
-                    // this->getDominantEigenVector(leftup, upup, rightup, origin, uppZ, upmZ, 
-                    //                              leftup0, upup0, rightup0, origin0, uppZ0, upmZ0, upEV);
-                    // // Right
-                    // this->getDominantEigenVector(origin, rightup, rightright, rightdown, rightpZ, rightmZ, 
-                    //                              origin0, rightup0, rightright0, rightdown0, rightpZ0, rightmZ0, rightEV);
-                    // // Down
-                    // this->getDominantEigenVector(leftdown, origin, rightdown, downdown, downpZ, downmZ, 
-                    //                              leftdown0, origin0, rightdown0, downdown0, downpZ0, downmZ0, downEV);
-                    // // pZ
-                    // this->getDominantEigenVector(leftpZ, uppZ, rightpZ, downpZ, pZpZ, origin, 
-                    //                              leftpZ0, uppZ0, rightpZ0, downpZ0, pZpZ0, origin0, pZEV);
-                    // // mZ
-                    // this->getDominantEigenVector(leftmZ, upmZ, rightmZ, downmZ, origin, mZmZ, 
-                    //                              leftmZ0, upmZ0, rightmZ0, downmZ0, origin0, mZmZ0, mZEV);
-                    // // Origin
-                    // this->getDominantEigenVector(left, up, right, down, pZ, mZ, left0, up0, right0, down0, pZ0, mZ0, originEV);
-
                     // Now get the helicity
                     double helicity;
-                    // std::cout << originEV << std::endl;
-                    // std::cout << leftEV << std::endl;
-                    // std::cout << upEV << std::endl;
-                    // std::cout << rightEV << std::endl;
-                    // std::cout << downEV << std::endl;
-                    // std::cout << pZEV << std::endl;
-                    // std::cout << mZEV << std::endl;
                     this->getHelicity(originEV, leftEV, upEV, rightEV, downEV, pZEV, mZEV, helicity);
-                    // std::cout << "The helicity is" << helicity << std::endl;
-                    // exit(-1);
                     // Update the running average
                     numSteps++;
                     helicityTotal += helicity;
                     helicityAvg = helicityTotal / static_cast<double>(numSteps);
-                    // std::cout << "After " << numSteps << " steps the helicity is " << helicityAvg << std::endl;
 
                     // Add the updated position to our history
                     Point<Type> latestPoint;
@@ -519,8 +425,6 @@ namespace LCS
                     std::vector<double> diffVec(3);
                     std::transform(x0.begin(), x0.end(), previousStep.begin(), diffVec.begin(), std::minus<double>());
                     length += std::sqrt(diffVec[0] * diffVec[0] + diffVec[1]*diffVec[1] + diffVec[2]*diffVec[2]);
-                    // std::cout << diffVec;
-                    // std::cout << " " << i << std::endl;
                     functor.previousSolution = sgn(innerProduct) * newSol; // Flip direction if required
 
                     // Fix maximum number of steps
@@ -529,20 +433,13 @@ namespace LCS
                     // Fix on length
                     if (length >= 10 * pi) helicityAvg = 100000000.;
 
-                    if (i==258)
-                    {
-                        std::cout << "The helicity is " << helicity << " at step " << numSteps << "with timestep" << dt << " at point " << x0[0] << "," << x0[1] << "," << x0[2] << std::endl;
-                    }
-
                     // Check outside of the domain first
                     if (x0[0] < pos_.getXMin() ||  x0[0] > pos_.getXMax() || x0[1] < pos_.getYMin() || x0[1] > pos_.getYMax() || x0[2] < pos_.getYMin() || x0[2] > pos_.getYMax())
                     {
                         helicityAvg = 10000000.;
                     }
-                    // std::cout << "After " << numSteps << " for strainline " << i << " the helicity is " << helicityAvg << std::endl;
-                } // if(success)
-                // else std::cout << "Damn! Need to adjust timestep." << std::endl;
-            } // while
+                } 
+            }
             this->writeStrainline(strainline, i+1);
             #pragma omp atomic
             strainLinesCompleted++;
