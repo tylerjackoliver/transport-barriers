@@ -13,7 +13,7 @@
    @returns The Hausdorff distance between a and b
 */
 template <typename vectorType>
-vectorType hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>& b)
+double hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>& b)
 {
     /* Error checks */
     if (a.empty() || b.empty()) /* Check neither a nor be is empty */
@@ -85,6 +85,68 @@ vectorType hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>
         }
     }
     return std::sqrt(cMax);
+}
+
+/*  @brief Computes an array containing whether two strainlines are within some Hausdorff distance H of each other. 
+    This is a precursor for determining which strainlines to keep.
+
+    @param[inout] std::vector<std::vector<bool>> relationshipArray Contains whether strainlines are within some tolerance of each other.
+    @param[in] 3D array of trajectories - (number of trajectories x steps in trajectory x dimensionality)
+    @param[in] tol Tolerance distance for saying two strainlines are 'close'
+*/
+template <typename vectorType, typename toleranceType>
+void computeWithinHausdorffDistance(std::vector<std::vector<bool>>& relationshipArray, std::vector<std::vector<std::vector<vectorType>>>& trajectories, toleranceType& tol)
+{
+    /* Get size details of the array */
+    number_of_trajectories = trajectories.size();
+    /* Check the relationship array - is it empty, is it the correct size? */
+    if (relationshipArray.empty())
+    {
+        throw std::runtime_error("The relationship passed to computeWithinHausdorffDistance is empty.");
+    } else if (relationshipArray.size() != trajectories.size())
+    {
+        throw std::runtime_error("The relationship array and trajectories array do not match in size.");
+    } else
+    {
+        for (int relationshipRow = 0; relationshipRow < relationshipArray.size(); ++relationshipRow)
+        {
+            if (relationshipArray.size() != relationshipArray[relationshipRow].size())
+            {
+                throw std::runtime_error("The relationship array passed to computeWithinHausdorffDistance is not square.");
+            }
+        }
+    }
+    /* OK, now run through every possible trajectory pair in relationship array and see if they are within a given tolerance.
+     * First, we assume that all of the values are sufficiently separated, i.e. relationshipArray is all zero/false.
+     */
+    for (auto relationshipRow : relationshipArray)
+    {
+        std::fill(relationshipRow.begin(), relationshipRow.end(), false);
+    }
+    /* Now run through the upper triangular portion of the relationship array (symmetric about diagonal axis) and fill in the 'correct'
+    * relationship
+    * */
+    for (int row = 0; row < relationshipArray.size(); ++row)
+    {
+        for (int col = row+1; col < relationshipArray.size(); ++col) // Square array
+        {
+            std::vector<vectorType> trajectoryOnRow = trajectories[row];
+            std::vector<vectorType> trajectoryOnCol = trajectories[col];
+            double distance = hausdorffDistance(trajectoryOnRow, trajectoryOnCol);
+            if (distance < tol)
+            {
+                relationshipArray[row][col] = true;
+            } /* Already initialised relationshipArray to false, so no action to be taken if not true */
+        }
+    }
+    /* Now mirror the operations in the transpose */
+    for (int col = 0; col < relationshipArray.size(); ++col)
+    {
+        for (int row = col + 1; row < relationshipArray.size(); ++row)
+        {
+            relationshipArray[row][col] = relationshipArray[col][row];
+        }
+    }
 }
 
 #endif
