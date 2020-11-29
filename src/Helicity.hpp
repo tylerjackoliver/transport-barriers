@@ -54,7 +54,7 @@ namespace LCS
             void getHelicity(const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, const Eigen::Vector3d&, double&);
             void integrate(std::vector<Type>&);
             int sgn(Type) const;
-            void writeStrainline(const std::vector<Point<Type>>&, const int) const;
+            void writeStrainline(const std::vector<Point<Type>>&, const int, const int) const;
     };
 
     template <typename Type>
@@ -272,178 +272,176 @@ namespace LCS
 
         auto timeStart = std::chrono::high_resolution_clock::now();
 
-        // #pragma omp parallel for shared(strainLinesCompleted)
+        #pragma omp parallel for shared(strainLinesCompleted)
         for (std::size_t i = 0; i < numStrainlines; ++i)
         {
-            /*
-            * Define the integrator. Make it a controlled stepper, so the time-step is adjusted if our initial time-step violates
-            * initial accuracy constraints.
-            */
-            typedef std::vector<double> state_type;
-            boost::numeric::odeint::runge_kutta_dopri5<state_type> method;
-            auto stepper = boost::numeric::odeint::make_controlled(/*reltol*/1e-05, /*abstol*/1e-05, method);
-            boost::numeric::odeint::runge_kutta_dopri5<state_type> step2;
-            
-            // Extract the initial condition
-            std::vector<int> initialIndex = indices[i];
-            Point<Type> initialPoint = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2]);
-
-            // Convert initial point into state_type
-            state_type x0 = {initialPoint.x, initialPoint.y, initialPoint.z};
-            state_type previousStep(3);
-
-            // Initialise initial time, current time, time-step 
-            double t = 0.0;
-            double dt = 0.001; // Guess
-
-            // Instantiate functor class
-            functorClass functor;
-
-            // Set problem parameters - initial eigenvector & integration time for eigenvector field
-            Eigen::Vector3d initNormal, initUnitNormal;
-            Point<Type> initpZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] + 1);
-            Point<Type> initmZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] - 1);
-        
-            initNormal[0] = initpZ.x - initmZ.x;
-            initNormal[1] = initpZ.y - initmZ.y;
-            initNormal[2] = initpZ.z - initmZ.z;
-
-            initUnitNormal = initNormal.normalized();
-
-            functor.previousSolution = (-1) * initUnitNormal.cross(pos_.getEigenvector(initialIndex[0], initialIndex[1], initialIndex[2]));
-            functor.initialTime = pos_.getInitialTime(); // For eigenvector field!
-            functor.finalTime = pos_.getFinalTime(); // For eigenvector field!
-
-            // Steps
-            double xStep = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
-            double yStep = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
-            double zStep = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
-
-            functor.xGridSpacing = xStep;
-            functor.yGridSpacing = yStep;
-            functor.zGridSpacing = zStep;
-
-            // Initialise running helicity
-            double helicityTotal = this->helicityField_[initialIndex[0]][initialIndex[1]][initialIndex[2]];
-            double helicityAvg = helicityTotal;
-            double pi = 4.0 * std::atan(1.0);
-            double length = 0.0;
-            unsigned long numSteps = 1;
-            const unsigned long long maxSteps = 250e3;
-
-            // Was the step ok?
-            boost::numeric::odeint::controlled_step_result result;
-
-            // Position history of the particle
-            std::vector<Point<double>> strainline;
-
-            // Enter while loop
-            while (helicityAvg < eps)
+            for (int direction = -1; direction < 2; direction+=2)
             {
-                /* Try and make a step */
-                previousStep = x0;
-                result = stepper.try_step(functor, x0, t, dt);
-                dt = std::min(dt, 0.01);
-                // dt = std::max(dt, 0.00001);
-                // x0 = previousStep;
-                // t = prevT;
-                // step2.do_step(functor, x0, t, dt);
-                // std::cout << "dt is now " << dt << std::endl;
+                /*
+                * Define the integrator. Make it a controlled stepper, so the time-step is adjusted if our initial time-step violates
+                * initial accuracy constraints.
+                */
+                typedef std::vector<double> state_type;
+                boost::numeric::odeint::runge_kutta_dopri5<state_type> method;
+                auto stepper = boost::numeric::odeint::make_controlled(/*reltol*/1e-013, /*abstol*/1e-013, method);
+                boost::numeric::odeint::runge_kutta_dopri5<state_type> step2;
+                
+                // Extract the initial condition
+                std::vector<int> initialIndex = indices[i];
+                Point<Type> initialPoint = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2]);
+
+                // Convert initial point into state_type
+                state_type x0 = {initialPoint.x, initialPoint.y, initialPoint.z};
+                state_type previousStep(3);
+
+                // Initialise initial time, current time, time-step 
+                double t = 0.0;
+                double dt = 0.001; // Guess
+
+                // Instantiate functor class
+                functorClass functor;
+
+                // Set problem parameters - initial eigenvector & integration time for eigenvector field
+                Eigen::Vector3d initNormal, initUnitNormal;
+                Point<Type> initpZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] + 1);
+                Point<Type> initmZ = pos_.getValue(initialIndex[0], initialIndex[1], initialIndex[2] - 1);
             
-                // If success is true - IE produced a new x, we need to know the helicity at the new point
-                if (result == boost::numeric::odeint::success)
+                initNormal[0] = initpZ.x - initmZ.x;
+                initNormal[1] = initpZ.y - initmZ.y;
+                initNormal[2] = initpZ.z - initmZ.z;
+
+                initUnitNormal = initNormal.normalized();
+
+                functor.previousSolution = direction * initUnitNormal.cross(pos_.getEigenvector(initialIndex[0], initialIndex[1], initialIndex[2]));
+                functor.initialTime = pos_.getInitialTime(); // For eigenvector field!
+                functor.finalTime = pos_.getFinalTime(); // For eigenvector field!
+
+                // Steps
+                double xStep = pos_.getXStep() * pos_.auxiliaryGridSizingFactor;
+                double yStep = pos_.getYStep() * pos_.auxiliaryGridSizingFactor;
+                double zStep = pos_.getZStep() * pos_.auxiliaryGridSizingFactor;
+
+                functor.xGridSpacing = xStep;
+                functor.yGridSpacing = yStep;
+                functor.zGridSpacing = zStep;
+
+                // Initialise running helicity
+                double helicityTotal = this->helicityField_[initialIndex[0]][initialIndex[1]][initialIndex[2]];
+                double helicityAvg = helicityTotal;
+                double pi = 4.0 * std::atan(1.0);
+                double length = 0.0;
+                unsigned long numSteps = 1;
+                const unsigned long long maxSteps = 250e6;
+
+                // Was the step ok?
+                boost::numeric::odeint::controlled_step_result result;
+
+                // Position history of the particle
+                std::vector<Point<double>> strainline;
+
+                // Enter while loop
+                while (helicityAvg < eps)
                 {
-
-                    /*
-                     * We now need to compute the gradient of the helicity field. This requires eigenvectors of the surrounding 4 points, and we therefore
-                     * need to perform a total of 13 integrations. If an eigenvector point is x, and a 'normal' integral point is '.', the structure is:
-                     *                              up
-                     *                              .
-                     *                          .   x   .
-                     *           left       .   x   o   x   .    right
-                     *                          .   x   .
-                     *                              .
-                     *                            down
-                     * With o the origin point. The central four points also need to be duplicated in the +Z and -Z axes to get the 3D terms.
-                     * 
-                     * We denote each of the following vectors by their location in this 'diamond' - e.g. leftleft being the leftmost, leftup being the top-left point, etc.
-                     * There is also a pZ (+Z) and mZ (-Z) direction.
-                     * 
-                     * I am so sorry for what you're about to read. - JT 10.10.2020
-                     */
-                    std::vector<Type> origin(3), left(3), leftleft(3), up(3), upup(3), down(3), downdown(3), right(3), rightright(3);
-                    std::vector<Type> origin0(3), left0(3), leftleft0(3), up0(3), upup0(3), down0(3), downdown0(3), right0(3), rightright0(3);
-
-                    std::vector<Type> leftup(3), leftdown(3), rightup(3), rightdown(3);
-                    std::vector<Type> leftup0(3), leftdown0(3), rightup0(3), rightdown0(3);
-
-                    std::vector<Type> leftpZ(3), uppZ(3), rightpZ(3), downpZ(3), pZpZ(3), pZ(3);
-                    std::vector<Type> leftpZ0(3), uppZ0(3), rightpZ0(3), downpZ0(3), pZpZ0(3), pZ0(3);
-
-                    std::vector<Type> leftmZ(3), upmZ(3), rightmZ(3), downmZ(3), mZmZ(3), mZ(3);
-                    std::vector<Type> leftmZ0(3), upmZ0(3), rightmZ0(3), downmZ0(3), mZmZ0(3), mZ0(3);
-
-                    // Now want to integrate each of the 'x' points forward to get the dominant eigenvector
-                    Eigen::Vector3d leftEV, upEV, rightEV, downEV, pZEV, mZEV, originEV;
-
-                    // Up
-                    origin = previousStep;
-                    up = origin; up[1] += pos_.getYStep(); this->getDominantEigenVector(up, upEV);
-                    down = origin; down[1] -= pos_.getYStep(); this->getDominantEigenVector(down, downEV);
-                    left = origin; left[0] -= pos_.getXStep(); this->getDominantEigenVector(left, leftEV);
-                    right = origin; right[0] += pos_.getXStep(); this->getDominantEigenVector(right, rightEV);
-                    pZ = origin; pZ[2] += pos_.getZStep(); this->getDominantEigenVector(pZ, pZEV);
-                    mZ = origin; mZ[2] -= pos_.getZStep(); this->getDominantEigenVector(mZ, mZEV);
-                    this->getDominantEigenVector(origin, originEV);
-
-                    // Now get the helicity
-                    double helicity;
-                    this->getHelicity(originEV, leftEV, upEV, rightEV, downEV, pZEV, mZEV, helicity);
-                    // Update the running average
-                    numSteps++;
-                    helicityTotal += helicity;
-                    helicityAvg = helicityTotal / static_cast<double>(numSteps);
-
-                    // Add the updated position to our history
-                    Point<Type> latestPoint;
-                    latestPoint.x = x0[0];
-                    latestPoint.y = x0[1];
-                    latestPoint.z = x0[2];
-                    strainline.push_back(latestPoint);
-
-                    // Update functor class with latest solution+
-                    Eigen::Vector3d normal, unitNormal;
-
-                    for (unsigned j = 0; j < pZ.size(); ++j)
+                    /* Try and make a step */
+                    previousStep = x0;
+                    result = stepper.try_step(functor, x0, t, dt);
+                    dt = std::min(dt, 0.01);
+                
+                    // If success is true - IE produced a new x, we need to know the helicity at the new point
+                    if (result == boost::numeric::odeint::success)
                     {
-                        normal[j] = pZ[j] - mZ[j];
-                    }
+                        /*
+                        * We now need to compute the gradient of the helicity field. This requires eigenvectors of the surrounding 4 points, and we therefore
+                        * need to perform a total of 13 integrations. If an eigenvector point is x, and a 'normal' integral point is '.', the structure is:
+                        *                              up
+                        *                              .
+                        *                          .   x   .
+                        *           left       .   x   o   x   .    right
+                        *                          .   x   .
+                        *                              .
+                        *                            down
+                        * With o the origin point. The central four points also need to be duplicated in the +Z and -Z axes to get the 3D terms.
+                        * 
+                        * We denote each of the following vectors by their location in this 'diamond' - e.g. leftleft being the leftmost, leftup being the top-left point, etc.
+                        * There is also a pZ (+Z) and mZ (-Z) direction.
+                        * 
+                        * I am so sorry for what you're about to read. - JT 10.10.2020
+                        */
+                        std::vector<Type> origin(3), left(3), leftleft(3), up(3), upup(3), down(3), downdown(3), right(3), rightright(3);
+                        std::vector<Type> origin0(3), left0(3), leftleft0(3), up0(3), upup0(3), down0(3), downdown0(3), right0(3), rightright0(3);
 
-                    unitNormal = normal.normalized();
-                    Eigen::Vector3d newSol = unitNormal.cross(originEV);
-                    double innerProduct = functor.previousSolution.dot(newSol);
-                    std::vector<double> diffVec(3);
-                    std::transform(x0.begin(), x0.end(), previousStep.begin(), diffVec.begin(), std::minus<double>());
-                    length += std::sqrt(diffVec[0] * diffVec[0] + diffVec[1]*diffVec[1] + diffVec[2]*diffVec[2]);
-                    functor.previousSolution = sgn(innerProduct) * newSol; // Flip direction if required
+                        std::vector<Type> leftup(3), leftdown(3), rightup(3), rightdown(3);
+                        std::vector<Type> leftup0(3), leftdown0(3), rightup0(3), rightdown0(3);
 
-                    // Fix maximum number of steps
-                    if (numSteps > maxSteps) helicityAvg = 100000000.;
+                        std::vector<Type> leftpZ(3), uppZ(3), rightpZ(3), downpZ(3), pZpZ(3), pZ(3);
+                        std::vector<Type> leftpZ0(3), uppZ0(3), rightpZ0(3), downpZ0(3), pZpZ0(3), pZ0(3);
 
-                    // Fix on length
-                    if (length >= 10 * pi) helicityAvg = 100000000.;
+                        std::vector<Type> leftmZ(3), upmZ(3), rightmZ(3), downmZ(3), mZmZ(3), mZ(3);
+                        std::vector<Type> leftmZ0(3), upmZ0(3), rightmZ0(3), downmZ0(3), mZmZ0(3), mZ0(3);
 
-                    // Check outside of the domain first
-                    if (x0[0] < pos_.getXMin() ||  x0[0] > pos_.getXMax() || x0[1] < pos_.getYMin() || x0[1] > pos_.getYMax() || x0[2] < pos_.getYMin() || x0[2] > pos_.getYMax())
-                    {
-                        helicityAvg = 10000000.;
-                    }
-                } 
-            }
-            this->writeStrainline(strainline, i+1);
-            #pragma omp atomic
-            strainLinesCompleted++;
-            std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps. The length was " << length << std::endl;
+                        // Now want to integrate each of the 'x' points forward to get the dominant eigenvector
+                        Eigen::Vector3d leftEV, upEV, rightEV, downEV, pZEV, mZEV, originEV;
+
+                        // Up
+                        origin = previousStep;
+                        up = origin; up[1] += yStep; this->getDominantEigenVector(up, upEV);
+                        down = origin; down[1] -= yStep; this->getDominantEigenVector(down, downEV);
+                        left = origin; left[0] -= xStep; this->getDominantEigenVector(left, leftEV);
+                        right = origin; right[0] += xStep; this->getDominantEigenVector(right, rightEV);
+                        pZ = origin; pZ[2] += zStep; 
+                        mZ = origin; mZ[2] -= zStep;
+
+                        // Update functor class with latest solution+
+                        Eigen::Vector3d normal, unitNormal;
+                        for (unsigned j = 0; j < pZ.size(); ++j)
+                        {
+                            normal[j] = pZ[j] - mZ[j];
+                        }
+                        unitNormal = normal.normalized();
+                        this->getDominantEigenVector(mZ, mZEV);
+                        this->getDominantEigenVector(pZ, pZEV);
+                        this->getDominantEigenVector(origin, originEV);
+
+                        // Now get the helicity
+                        double helicity;
+                        this->getHelicity(originEV, leftEV, upEV, rightEV, downEV, pZEV, mZEV, helicity);
+                        // Update the running average
+                        numSteps++;
+                        helicityTotal += helicity;
+                        helicityAvg = helicityTotal / static_cast<double>(numSteps);
+
+                        // Add the updated position to our history
+                        Point<Type> latestPoint;
+                        latestPoint.x = x0[0];
+                        latestPoint.y = x0[1];
+                        latestPoint.z = x0[2];
+                        strainline.push_back(latestPoint);
+
+                        Eigen::Vector3d newSol = unitNormal.cross(originEV);
+                        double innerProduct = functor.previousSolution.dot(newSol);
+                        std::vector<double> diffVec(3);
+                        std::transform(x0.begin(), x0.end(), previousStep.begin(), diffVec.begin(), std::minus<double>());
+                        length += std::sqrt(diffVec[0] * diffVec[0] + diffVec[1]*diffVec[1] + diffVec[2]*diffVec[2]);
+                        functor.previousSolution = sgn(innerProduct) * newSol; // Flip direction if required
+
+                        // Fix maximum number of steps
+                        if (numSteps > maxSteps) helicityAvg = 100000000.;
+
+                        // Fix on length
+                        if (length >= 10 * pi) helicityAvg = 100000000.;
+
+                        // Check outside of the domain first
+                        if (x0[0] < pos_.getXMin()-1 ||  x0[0] > pos_.getXMax()*1.5 || x0[1] < pos_.getYMin() || x0[1] > pos_.getYMax() || x0[2] < pos_.getYMin() || x0[2] > pos_.getYMax())
+                        {
+                            helicityAvg = 10000000.;
+                        }
+                    } 
+                }
+                this->writeStrainline(strainline, i+1, direction);
+                #pragma omp atomic
+                strainLinesCompleted++;
+                std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps. The length was " << length << std::endl;
+            } //direction
         } // for
         auto timeEnd = std::chrono::high_resolution_clock::now();
         std::cout << "Integrating " << numStrainlines << " strainlines complete. Time required: " << std::chrono::duration_cast<std::chrono::minutes>(timeEnd-timeStart).count() << " minutes." << std::endl;
@@ -558,14 +556,14 @@ namespace LCS
     }
 
     template <typename Type>
-    void Helicity<Type>::writeStrainline(const std::vector<Point<Type>>& strainline, const int index) const
+    void Helicity<Type>::writeStrainline(const std::vector<Point<Type>>& strainline, const int index, const int direction) const
     {
         std::ofstream output;
         // Get buffer size required
-        std::size_t bufLen = std::snprintf(nullptr, 0, "../strainlines/strainlines_%d", index);
+        std::size_t bufLen = std::snprintf(nullptr, 0, "../strainlines/strainlines_%d_%d", index, direction);
         // Create new character array; using char* allocates on heap in fringe case of huge fnames
         char *buf = new char[bufLen+1];
-        snprintf(buf, bufLen+1, "../strainlines/strainlines_%d", index);
+        snprintf(buf, bufLen+1, "../strainlines/strainlines_%d_%d", index, direction);
         // Open file
         output.open(buf);
         // Get vector size
