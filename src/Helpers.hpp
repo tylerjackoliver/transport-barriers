@@ -3,6 +3,8 @@
 
 #include<eigen3/Eigen/Eigenvalues>
 #include<boost/numeric/odeint.hpp>
+#include<vector>
+#include "forceFunction.hpp"
 
 namespace Helpers
 {
@@ -50,23 +52,37 @@ namespace Helpers
         deformation(2,1) = (up[2]-down[2]) / (2. * yGridSpacing);
         deformation(2,2) = (pZ[2]-mZ[2]) / (2. * zGridSpacing);
 
-        // std::cout << "r" << std::endl; std::cout << right;
-        // std::cout << std::endl << "l " << std::endl;
-        // std::cout << left;
-        // std::cout << std::endl << "u " << std::endl;
-        // std::cout << up;
-        // std::cout << std::endl << "d " << std::endl;
-        // std::cout << down;
-        // std::cout << std::endl << "p " << std::endl;
-        // std::cout << pZ;
-        // std::cout << std::endl << "m " << std::endl;
-        // std::cout << mZ;
-                            
         cauchy_green = deformation.transpose() * deformation;
         Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
         ev = solver.eigenvectors().col(2).real();
         dominantEigenvalue = solver.eigenvalues().maxCoeff();
         minimumEigenvalue = solver.eigenvalues().minCoeff();
+    }
+
+    /* @brief Computes the sign of a given number.
+       @param[in] val The number to compute the sign of
+       @returns Integer in {+1, 0, -1} giving the sign of val.
+    */
+    template <typename numericType>
+    int sgn(numericType val)
+    {
+        return (val > 0) - (val < 0);
+    }
+
+    /* @brief Integrates a given trajectory from time initTime to finalTime
+       @param[inout] x On entry, it is the initial condition. On exit, it is the final condition.
+       @param[in] initTime The initial time of the integration
+       @param[in] finalTime The final time of the integration.
+       @param[in] absTol The absolute tolerance for the integrator
+       @param[in] relTol The relative tolerance for the integrator
+    */
+    template <typename numericType>
+    void integrateForceFunction(std::vector<numericType>& x, numericType& initTime, numericType& finalTime, double& absTol, double& relTol)
+    {
+        typedef std::vector<numericType> state_type;
+        int sign = Helpers::sgn(finalTime - initTime);
+        boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(absTol, relTol);
+        boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, initTime, finalTime, sign*.01, abcFlowObserver);
     }
 
 }
