@@ -9,14 +9,19 @@
 class functorClass
 {
     private:
-        /* Return the sign of a given input x; return [1, 0, -1] */
-        int sgn(double val)
+        /* @brief Returns the sign of a given input variable
+           @param[in] val numeric type to return the sign of
+           @returns {+1, 0, -1}: Positive, zero, negative, respectively.
+        */
+        template <typename numericType>
+        int sgn(numericType val)
         {
             return (val > 0) - (val < 0);
         }
 
-        /* Integrate a given state x forward from initialTime to finalTime */
-        // template <typename Type>
+        /* Integrate a given std::vector<double> forward from initialTime to finalTime.
+        @param[inout] x std::vector<double> containing the state to integrate. On entry, it is the initial condition. On exit, it is the final condition.
+        */
         void integrate (std::vector<double>& x)
         {
             typedef std::vector<double> state_type;
@@ -27,8 +32,8 @@ class functorClass
 
     public:
         Eigen::Vector3d previousSolution;   // For globally smooth strainlines
-        double initialTime;               // For numerical integration
-        double finalTime;                 // ""
+        double initialTime;                 // For numerical integration
+        double finalTime;                   // ""
         double xGridSpacing;                // For computing derivatives
         double yGridSpacing;                // ""
         double zGridSpacing;                // ""
@@ -38,16 +43,23 @@ class functorClass
     /* Class constructor */
     functorClass(){}; // Blank
 
-    /* requires arguments to be vectors */
-    // template <typename Type>
+    /* @brief Force function for repelling strainline advection.
+       @param[in] x The value of the state at a given time.
+       @param[inout] xdot The value of the state derivative at a given time.
+       @param[in] t The current time of the integration.
+    */
     void operator()(const std::vector<double>& x, std::vector<double>& xdot, double t)
     {
-        /* We need to know the direction of the eigenvector field at this point - therefore, construct a grid around this initial point and integrate the trajectories forward */
+        /* We need to know the direction of the eigenvector field at this point.
+         *
+         * Therefore, construct a grid around this initial point and integrate the trajectories forward
+         */
         std::vector<double> left(3), up(3), right(3), down(3), pZ(3), mZ(3);
         Eigen::Vector3d direction;
 
         double maxEigenvalue, minEigenvalue;
 
+        /* Construct initial conditions grid */
         left = x; left[0] -= xGridSpacing;
         right = x; right[0] += xGridSpacing;
         up = x; up[1] += yGridSpacing;
@@ -55,7 +67,17 @@ class functorClass
         pZ = x; pZ[2] += zGridSpacing;
         mZ = x; mZ[2] -= zGridSpacing;
 
-        // Integrate these all forwards
+        /* Construct the normal to the plane */
+        Eigen::Vector3d normal, unitNormal, xplane, yplane;
+        for (size_t i = 0; i < left.size(); ++i)
+        {
+            xplane[i] = right[i] - left[i];
+            yplane[i] = up[i] - down[i];
+        }
+        normal = xplane.cross(yplane);
+        unitNormal = normal.normalized();
+
+        /* Integrate the initial conditions forward */
         this->integrate(left);
         this->integrate(right);
         this->integrate(up);
@@ -63,24 +85,17 @@ class functorClass
         this->integrate(pZ);
         this->integrate(mZ);
 
-        // Compute the eigenvector
-        Helpers::getDominantEigenvectorAndEigenvalue(left, up, right, down, pZ, mZ, xGridSpacing, yGridSpacing, zGridSpacing, direction, maxEigenvalue, minEigenvalue);
+        /* Compute the dominant eigenvector */
+        Helpers::getDominantEigenvectorAndEigenvalue(left, up, right, down, pZ, mZ, xGridSpacing, yGridSpacing, zGridSpacing, 
+                                                     direction, maxEigenvalue, minEigenvalue);
 
-        // Construct the normal to the plane
-        Eigen::Vector3d normal, unitNormal, xplane, yplane;
-
-        for (unsigned i = 0; i < left.size(); ++i)
-        {
-            xplane[i] = right[i] - left[i];
-            yplane[i] = up[i] - down[i];
-        }
-
-        normal = xplane.cross(yplane);
-        unitNormal = normal.normalized();
-        // Create the derivative vector
+        /* Construct the derivative vector.
+         * Recall that the equations of motion for the strainline are \gamma^\prime = n_\Pi \cross \eta_3 
+         */
         Eigen::Vector3d derivative = unitNormal.cross(direction);
         double innerProduct = derivative.dot(this->previousSolution);
         derivative = derivative * sgn(innerProduct);
+        /* Assign */
         xdot[0] = derivative[0]; 
         xdot[1] = derivative[1];
         xdot[2] = derivative[2];
