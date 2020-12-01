@@ -275,6 +275,7 @@ namespace LCS
         #pragma omp parallel for shared(strainLinesCompleted)
         for (std::size_t i = 0; i < numStrainlines; ++i)
         {
+            std::vector<std::vector<Point<double>>> bothDirections;
             for (int direction = -1; direction < 2; direction+=2)
             {
                 /*
@@ -437,11 +438,21 @@ namespace LCS
                         }
                     } 
                 }
-                this->writeStrainline(strainline, i+1, direction);
-                #pragma omp atomic
+                bothDirections.push_back(strainline);   // Add to the pair
+            } //direction 
+            /* Reverse the direction of the first trajectory to get one smooth continuous line (and remove repeated point) */
+            std::reverse(bothDirections[1].begin(), bothDirections[1].end());
+            bothDirections[1].pop_back();
+            /* Create new vector containing the entire trajectory */
+            std::vector<Point<double>> entireTrajectory;
+            entireTrajectory.insert(entireTrajectory.begin(), bothDirections[1].begin(), bothDirections[1].end());
+            entireTrajectory.insert(entireTrajectory.end(), bothDirections[0].begin(), bothDirections[0].end());
+            #pragma omp critical
+            {
                 strainLinesCompleted++;
-                std::cout << "Finished integrating strainline " << strainLinesCompleted << " of " << numStrainlines << " after " << numSteps << " steps. The length was " << length << std::endl;
-            } //direction
+                this->writeStrainline(entireTrajectory, strainLinesCompleted, 1);
+            }
+            std::cout << "Completed integrating strainline " << strainLinesCompleted << " of " << numStrainlines << std::endl;
         } // for
         auto timeEnd = std::chrono::high_resolution_clock::now();
         std::cout << "Integrating " << numStrainlines << " strainlines complete. Time required: " << std::chrono::duration_cast<std::chrono::minutes>(timeEnd-timeStart).count() << " minutes." << std::endl;
@@ -560,10 +571,10 @@ namespace LCS
     {
         std::ofstream output;
         // Get buffer size required
-        std::size_t bufLen = std::snprintf(nullptr, 0, "../strainlines/strainlines_%d_%d", index, direction);
+        std::size_t bufLen = std::snprintf(nullptr, 0, "../strainlines/strainlines_%d", index);
         // Create new character array; using char* allocates on heap in fringe case of huge fnames
         char *buf = new char[bufLen+1];
-        snprintf(buf, bufLen+1, "../strainlines/strainlines_%d_%d", index, direction);
+        snprintf(buf, bufLen+1, "../strainlines/strainlines_%d", index);
         // Open file
         output.open(buf);
         // Get vector size
