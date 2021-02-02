@@ -2,95 +2,110 @@
 #define _POINT_H_
 
 #include <ostream>
+#include <vector>
+#include <type_traits>
+#include <stdexcept>
 
-template <typename Type>
+/* @brief Custom class that holds coordinates of a given point in the field.
+ *
+ * This supports an arbitrary number of points using C++17 fold expressions.
+ */
+template <typename Type, int dimension>
 struct Point
 {
-    Type x;
-    Type y;
-    Type z;
+	/* Underlying storage container. */
+	std::vector<Type> state;
 
-    // Class constructors
+	/* Define class constructors */
 
-    Point(){};  // Default initialiser;leave x, y, z to be created later
-    Point(Type x_, Type y_, Type z_)
+	/* @brief Default constructor. Leaves everything to be created later but sets the size.
+	 */
+	Point( void ) : state(dimension);
+	{};
+
+	/* @brief Constructor using arbitrary number of parameters.
+	 * @param[in] std::initialiser_list<Type> containing the values to assign.
+	 */
+	Point(std::initialiser_list<Type>& args) : state(args)
+    {}
+
+	/* Initialise a point from another point */
+    Point(const Point<Type, dimension>& in)
     {
-        this->x = x_;
-        this->y = y_;
-        this->z = z_;
+    	this->state = in.state;
     }
     
-    Point(const Point& in)
+    /* @brief Return the size (= dimension) of the underlying storage.
+     * @returns The size of the underlying storage.
+     */
+    int size( void )
     {
-        this->x = in.x;
-        this->y = in.y;
-        this->z = in.z;
+    	return this->state.size();
     }
 
-    // Operator overloads
+    /* Operator overloads */
 
-    Point& operator+=(Point const& rhs)
+    Point<Type, dimension>& operator+=(Point<Type, dimension> const& rhs)
     {
-        this->x += rhs.x;
-        this->y += rhs.y;
-        this->z += rhs.z;
-
-        return *this;
+    	for (int i = 0; i < dimension; ++i) this->state[i] += rhs.state[i];
+    	return *this;
     }
 
-    Point& operator-=(Point const& rhs)
+    Point<Type, dimension>& operator-=(Point<Type, dimension> const& rhs)
     {
-        this->x -= rhs.x;
-        this->y -= rhs.y;
-        this->z -= rhs.z;
-
+    	for (int i = 0; i < dimension; ++i) this->state[i] -= rhs.state[i];
         return *this;
     }
 
     template <typename multType>
-    Point& operator*=(multType a)
+    Point<Type, dimension>& operator*=(multType a)
     {
-        this->x *= a;
-        this->y *= a;
-        this->z *= a;
-
+    	for (int i = 0; i < dimension; ++i) this->state[i] *= a;
         return *this;        
     }
 
     template <typename multType>
-    Point& operator/=(multType a)
+    Point<Type, dimension>& operator/=(multType a)
     {
-        this->x /= a;
-        this->y /= a;
-        this->z /= a;
+    	for (int i = 0; i < dimension; ++i) this->state[i] /= a;
+    	return *this;
     }
 
-    Point operator+(Point const &a) const
+    Point<Type, dimension> operator+(Point<Type, dimension> const &a) const
     {
-        return Point(a.x+this->x, a.y+this->y, a.z+this->z);
+    	Point<Type, dimension> toReturn;
+    	for (int i = 0; i < dimension; ++i) toReturn.state[i] = a.state[i] + this->state[i];
+    	return toReturn;
     }
 
-    Point operator-(Point const &a) const
+    Point<Type, dimension> operator-(Point const &a) const
     {
-        return Point(a.x-this->x, a.y-this->y, a.z-this->z);
+    	Point<Type, dimension> toReturn;
+    	for (int i = 0; i < dimension; ++i) toReturn.state[i] = a.state[i] - this->state[i];
+    	return toReturn;
     }
 
     template <typename multType>
-    Point operator*(multType a)
+    Point<Type, dimension> operator*(multType a)
     {
-        return Point(this->x*a, this->y*a);
+    	Point<Type, dimension> toReturn;
+    	for (int i = 0; i < dimension; ++i) toReturn.state[i] = a.state[i] * this->state[i];
+        return toReturn;
     }
 
-    bool operator==(const Point& a) const
+    bool operator==(const Point<Type, dimension>& a) const
     {
-        return (this->x == a.x && this->y == a.y && this->z == a.z);
+        for (int i = 0; i < dimension; ++i)
+        {
+        	if (a.state[i] != this->state[i]) return false;
+        }
+        return true;
     }
 
     void vectorToPoint(const std::vector<Type> &in)
     {
-        this->x = in[0];
-        this->y = in[1];
-        this->z = in[2];
+    	if (in.size() != dimension) throw std::runtime_error("The sizes of vector in vectorToPoint do not match.");
+    	this->state = in;
     }
 
 };
