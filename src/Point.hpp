@@ -5,6 +5,7 @@
 #include <vector>
 #include <type_traits>
 #include <stdexcept>
+#include <initializer_list>
 
 /* @brief Custom class that holds coordinates of a given point in the field.
  *
@@ -20,14 +21,16 @@ struct Point
 
 	/* @brief Default constructor. Leaves everything to be created later but sets the size.
 	 */
-	Point( void ) : state(dimension);
+	Point( void ) : state(dimension)
 	{};
 
 	/* @brief Constructor using arbitrary number of parameters.
 	 * @param[in] std::initialiser_list<Type> containing the values to assign.
 	 */
-	Point(std::initialiser_list<Type>& args) : state(args)
-    {}
+	Point(std::initializer_list<Type> args) : state( args.begin(), args.end() )
+    {
+        if (state.size() != dimension) throw std::runtime_error("You tried to initialise a Point with the wrong dimension of parameters.");
+    }
 
 	/* Initialise a point from another point */
     Point(const Point<Type, dimension>& in)
@@ -110,10 +113,13 @@ struct Point
 
 };
 
-template <typename Type>
-std::ostream& operator<<(std::ostream& os, const Point<Type>& in)
+template <typename Type, int dimension>
+std::ostream& operator<<(std::ostream& os, const Point<Type, dimension>& in)
 {
-    return (os << "(" << in.x << ", " << in.y << ", " << in.z << ")");    
+    os << "(";
+    for (unsigned i = 0; i < (dimension-1); ++i) os << in.state[i] << ",";
+    os << in.state[dimension - 1];
+    os << ")";
 }
 
 #endif // _POINT_H_
