@@ -1,18 +1,20 @@
 #ifndef __FORCE_FUNCTION_H__
 #define __FORCE_FUNCTION_H__
 
+#include <vector>
+#include <cmath>
+
 typedef std::vector<double> state_type;
 
-void abcFlow(state_type& xIn, std::vector<double>& xdot, const double t){
+void abcFlow(state_type& x, std::vector<double>& xdot, const double t)
+{
+    double A = std::sqrt(3);
+    double B = std::sqrt(2);
+    double C = 1.0;
 
-    double x = xIn[0];
-    double y = xIn[1];
-    double z = xIn[2];
-
-    xdot[0] = sqrt(3.0) * sin(z) + 1.0 * cos(y);
-    xdot[1] = sqrt(2.0) * sin(x) + sqrt(3.0) * cos(z);
-    xdot[2] = 1.0 * sin(y) + sqrt(2) * cos(x);
-
+    xdot[0] = A * std::sin(x[2]) + C * std::cos(x[1]);
+    xdot[1] = B * std::sin(x[0]) + A * std::cos(x[2]);
+    xdot[2] = C * std::sin(x[1]) + B * std::cos(x[0]);
 };
 
 void pdg(state_type& x, std::vector<double>& xdot, const double t)
@@ -35,15 +37,20 @@ void pdg(state_type& x, std::vector<double>& xdot, const double t)
     xdot[2] = 0.0;
 };
 
-void dynSystem(state_type& x, std::vector<double>& xdot, const double t)
+void periodicABCFlow(state_type& x, state_type& xdot, const double t)
 {
     double A = std::sqrt(3);
     double B = std::sqrt(2);
     double C = 1.0;
 
-    xdot[0] = A * std::sin(x[2]) + C * std::cos(x[1]);
-    xdot[1] = B * std::sin(x[0]) + A * std::cos(x[2]);
+    xdot[0] = (A + 0.1 * std::sin(t) ) * std::sin(x[2]) + C * std::cos(x[1]);
+    xdot[1] = B * std::sin(x[0]) + (A + 0.1 * std::sin(t) ) * std::cos(x[2]);
     xdot[2] = C * std::sin(x[1]) + B * std::cos(x[0]);
+}
+
+void dynSystem(state_type& x, std::vector<double>& xdot, const double t)
+{
+    periodicABCFlow(x, xdot, t);
 }
 
 // template <typename Type>

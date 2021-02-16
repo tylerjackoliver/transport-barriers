@@ -161,7 +161,6 @@ namespace LCS
                         }
                         
                     }
-                
                     prog++;
                     std::cout << "Completed processing " << double(prog)/this->nx_ * 100. << "% of the eigen field." << std::endl;
                 }

@@ -6,22 +6,20 @@
 #include <vector>
 #include <stdexcept>
 #include <limits>
+#include "Point.hpp"
 
 /* @brief Computes the Hausdorff distance between two vectors a and b which represent trajectories of strainlines.
    @param[inout] a Vector of vector of points
    @param[inout] b Vector of vector of points
    @returns The Hausdorff distance between a and b
 */
-template <typename vectorType>
-double hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>& b)
+double hausdorffDistance(const std::vector<Point<double>>& a1, const std::vector<Point<double>>& b1)
 {
+    std::vector<Point<double>> a = a1, b = b1;
     /* Error checks */
     if (a.empty() || b.empty()) /* Check neither a nor be is empty */
     {
         throw std::runtime_error("One of the vectors passed to hausdorffDistance is empty.");
-    } else if ( a[0].size() != b[0].size() ) /* Dimensionality does not match */
-    {
-        throw std::runtime_error("The vectors passed to hausdorffDistance do not have the same dimensionality.");
     }
 
     /* Create a random iterator */
@@ -45,7 +43,7 @@ double hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>& b)
     } /* A and B may not necessarily be of the same length (different number of points in the trajectory), but _will_ have the same dimensionality */
 
     /* Shuffle the indices arrays */
-    std::shuffle(std::begin(indicesA), std::end(indicesB), rngGenerator);
+    std::shuffle(std::begin(indicesA), std::end(indicesA), rngGenerator);
     std::shuffle(std::begin(indicesB), std::end(indicesB), rngGenerator);
 
     /* Initialise loop variables */
@@ -64,10 +62,9 @@ double hausdorffDistance(std::vector<vectorType>& a, std::vector<vectorType>& b)
         {
             d = 0.0; // Reset distance
             /* Get Euclidean distance - keep as squared for now & square at the end to save computation time */
-            for (unsigned dimension = 0; dimension < a[0].size(); ++dimension)
-            {
-                d += (a[indexA][dimension] - b[indexB][dimension]) * (a[indexA][dimension] - b[indexB][dimension]); // Prevent use of std::pow()
-            }
+            d += (a[indexA].x - b[indexB].x) * (a[indexA].x - b[indexB].x); // Prevent use of std::pow()
+            d += (a[indexA].y - b[indexB].y) * (a[indexA].y - b[indexB].y); // Prevent use of std::pow()
+            d += (a[indexA].z - b[indexB].z) * (a[indexA].z - b[indexB].z); // Prevent use of std::pow()
             if (d < cMax) // We have an early termination
             {
                 haveWeBroken = true;
@@ -148,5 +145,69 @@ void computeWithinHausdorffDistance(std::vector<std::vector<bool>>& relationship
         }
     }
 }
+
+template <typename T>
+void getLongestLine(const std::vector<std::vector<Point<T>>>& allStrainlines, std::vector<Point<T>>& longestLine)
+{
+    double maxDistance = std::numeric_limits<T>::min(); 
+
+    for (const std::vector<Point<T>>& strainline : allStrainlines)
+    {
+        double distance = 0;
+        for (int i = 0; i < strainline.size() - 1; ++i)
+        {
+            distance += (strainline[i].x - strainline[i+1].x) * (strainline[i].x - strainline[i+1].x);
+            distance += (strainline[i].y - strainline[i+1].y) * (strainline[i].y - strainline[i+1].y);
+            distance += (strainline[i].z - strainline[i+1].z) * (strainline[i].z - strainline[i+1].z);
+        }
+        if (distance > maxDistance)
+        {
+            maxDistance = distance;
+            longestLine = strainline;
+        }
+    } 
+}
+
+/* @brief Filter the strainlines found by Frechet distance.
+    * @param[in] std::vector<std::vector<Point<T>>> containing all the strainlines.
+    * @param[in] minDistance minimum distance that two trajectories must be separated by to be 'independent'
+    * @param[out] filteredStrainlines std::vecto./r<std::vector<Point<T>>> containing the filtered strainlines.
+    */
+template <typename T>
+void filterOnHausdorff(const std::vector<std::vector<Point<T>>>& allStrainlines, double minDistance, std::vector<std::vector<Point<T>>>& filteredStrainlines)
+{
+    /* OK, so have a list of all the possible strainlines in the dataset. We're going to go through one-by-one and check whether each trajectory
+        is similar to another one we've already seen. If it is, we arbitarily remove the other trajectory and keep the one we were examining.
+        We'll need to initialise the array with the first strainline, so make sure it's a good one!
+        
+        - Would taking the longest strainline be best? Should in theory result in the same answer, but something to try
+    */
+    /* Check there are actually strainlines in teh dataset. */
+    std::vector<Point<T>> longestLine;
+    if ( !allStrainlines.size() ) throw std::runtime_error("Sorry, there were no strainlines to filter!");
+    getLongestLine(allStrainlines, longestLine);
+    filteredStrainlines.push_back(longestLine);
+    /* There is a slight chance that we get similar trajectories included twice, depending on racing. However, that's a price to pay here for the parallelism
+    speedup. */
+    for (int traj = 1; traj < ( allStrainlines.size() - 1 ); ++traj) // -1 as last trajectory will have already been checked when we get there
+    {
+        std::vector<Point<T>> thisTrajectory = allStrainlines[traj];
+        /* By default, assumine it's going into the new strainline database. */
+        bool toInclude = true;
+        for (int toCompare = traj + 1; toCompare < allStrainlines.size(); ++toCompare)
+        {
+            double distance = hausdorffDistance(thisTrajectory, allStrainlines[toCompare]);
+            /* If this trajectory is within another that's already in the database, stop computing, don't add this one. */
+            if (distance < minDistance)
+            {
+                toInclude = false;
+                break;
+            }
+        }
+        if (toInclude) filteredStrainlines.push_back(thisTrajectory);
+        std::cout << "Completed comparing trajectory " << traj << " of " << allStrainlines.size() << '\n';
+    }
+};
+
 
 #endif

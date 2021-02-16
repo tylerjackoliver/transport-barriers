@@ -4,10 +4,37 @@
 #include<eigen3/Eigen/Eigenvalues>
 #include<boost/numeric/odeint.hpp>
 #include<vector>
+#include <numeric>
 #include "forceFunction.hpp"
 
 namespace Helpers
 {
+    /* @brief Computes the sign of a given number.
+       @param[in] val The number to compute the sign of
+       @returns Integer in {+1, 0, -1} giving the sign of val.
+    */
+    template <typename numericType>
+    int sgn(numericType val)
+    {
+        return (val > 0) - (val < 0);
+    }
+
+    /* @brief Integrates a given trajectory from time initTime to finalTime
+       @param[inout] x On entry, it is the initial condition. On exit, it is the final condition.
+       @param[in] initTime The initial time of the integration
+       @param[in] finalTime The final time of the integration.
+       @param[in] absTol The absolute tolerance for the integrator
+       @param[in] relTol The relative tolerance for the integrator
+    */
+    template <typename numericType>
+    void integrateForceFunction(std::vector<numericType>& x, numericType& initTime, numericType& finalTime, double& absTol, double& relTol)
+    {
+        typedef std::vector<numericType> state_type;
+        int sign = Helpers::sgn(finalTime - initTime);
+        boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(absTol, relTol);
+        boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, initTime, finalTime, sign*.01, abcFlowObserver);
+    }
+
 
     template <typename vecType, typename scalarType>
     void getDominantEigenVector(vecType& left, vecType& up, vecType& right, vecType& down, vecType &pZ, vecType &mZ, scalarType &xGridSpacing, scalarType &yGridSpacing, scalarType &zGridSpacing, Eigen::Vector3d& ev)
@@ -58,132 +85,71 @@ namespace Helpers
         dominantEigenvalue = solver.eigenvalues().maxCoeff();
         minimumEigenvalue = solver.eigenvalues().minCoeff();
     }
-    
-    /* @brief Get the dominant eigenvector for a given position by constructing the grid around it.
-     * @param[in] x0 std::vector<T> containing the initial state to determine the eigenvector for
-     * @param[inout] ev The dominant eigenvector for the flow at that point.
-     * @param[in] xSpace The step in the x-direction
-     * @param[in] ySpace The step in the y-direction
-     * @param[in] zSpace the step in the z-direction.
+
+    /* @brief Get the eigenvector about a central point based on auxiliary grid
+       @param[in] Point<vecType> The current point about which to get the eigenvector about
+       @param[in] xStep Numeric type representing the step in the x-direction to take
+       @param[in] yStep Numeric type representing the step in the y-direction to take
+       @param[in] zStep Numeric type representing the step in the z-direction to take
+       @param[out] vector Eigen::Matrix<double, 3, 1> representing the output Eigenvector
+       @param[in] absTol The absolute tolerance for the numerical integration
+       @param[in] relTol The relative tolerance for the numerical integration
+       @parma[in] initTime The initial time for the integration
+       @param[in] finalTime The final time for the integration
+    */
+    template <typename vecType, typename scalarType>
+    void makeGridGetEigenVector(Point<vecType>& thisPoint, scalarType& xStep, scalarType& yStep, scalarType& zStep, Eigen::Matrix<double, 3, 1>& vector, double absTol, double relTol, double initTime, double finalTime)
+    {
+        /* Form the grid about thisPoint */
+        Point<vecType> xLeft, xRight, yPlus, yMinus, zPlus, zMinus;
+        xLeft = thisPoint; xLeft.x -= xStep;
+        xRight = thisPoint; xRight.x += xStep;
+        yPlus = thisPoint; yPlus.y += yStep;
+        yMinus = thisPoint; yMinus.y -= yStep;
+        zPlus = thisPoint; zPlus.z += zStep;
+        zMinus = thisPoint; zMinus.z -= zStep;
+
+        /* Convert to vectors */
+        std::vector<double> xL(3), xR(3), yP(3), yM(3), zP(3), zM(3);
+        xL[0] = xLeft.x; xL[1] = xLeft.y; xL[2] = xLeft.z;
+        xR[0] = xRight.x; xR[1] = xRight.y; xR[2] = xRight.z;
+        yP[0] = yPlus.x; yP[1] = yPlus.y; yP[2] = yPlus.z;
+        yM[0] = yMinus.x; yM[1] = yMinus.y; yM[2] = yMinus.z;
+        zP[0] = zPlus.x; zP[1] = zPlus.y; zP[2] = zPlus.z;
+        zM[0] = zMinus.x; zM[1] = zMinus.y; zM[2] = zMinus.z;
+
+        /* Integrate forward */
+        integrateForceFunction(xL, initTime, finalTime, absTol, relTol);
+        integrateForceFunction(xR, initTime, finalTime, absTol, relTol);
+        integrateForceFunction(yP, initTime, finalTime, absTol, relTol);
+        integrateForceFunction(yM, initTime, finalTime, absTol, relTol);
+        integrateForceFunction(zP, initTime, finalTime, absTol, relTol);
+        integrateForceFunction(zM, initTime, finalTime, absTol, relTol);
+
+        /* From this, compute the eigenvector */
+        getDominantEigenVector(xL, yP, xR, yM, zP, zM, xStep, yStep, zStep, vector);
+    }
+
+    /* @brief Gets difference between a specified point and a vector
+     * @param[in] Vector<Vector>> of the strainline trajectory
+     * @param[in] Vector of the desired point
+     * @param[in] Distance threshold
+     * @param[out] boolean whether the point is below the given distance
      */
     template <typename Type>
-    void getDominantEigenVector(const std::vector<Type>& x0, Type& xSpace, Type& ySpace, Type& zSpace, Eigen::Matrix<Type, 3, 1>& ev)
+    bool distanceBelowThreshold(std::vector<Point<Type>>& trajectory, Point<Type>& point, Type distanceThreshold)
     {
-        Eigen::Matrix<Type, 3, 3> deformation, cauchy_green;
-        std::vector<double> xPlus(3), xMinus(3), yPlus(3), yMinus(3), zPlus(3), zMinus(3);
-
-        xPlus = x0; xPlus[0] += xSpace;
-        xMinus = x0; xMinus[0] -= xSpace;
-        yPlus = x0; yPlus[1] += ySpace;
-        yMinus = x0; yMinus[1] -= ySpace;
-        zPlus = x0; zPlus[2] += zSpace;
-        zMinus = x0; zMinus[2] -= zSpace;
-
-        this->integrate(xPlus);
-        this->integrate(xMinus);
-        this->integrate(yPlus);
-        this->integrate(yMinus);
-        this->integrate(zPlus);
-        this->integrate(zMinus);
-
-        // deformation tensor 
-        deformation(0,0) = (xPlus[0]-xMinus[0]) / (2. * xSpace);
-        deformation(0,1) = (yPlus[0]-yMinus[0]) / (2. * ySpace);
-        deformation(0,2) = (zPlus[0]-zMinus[0]) / (2. * zSpace);
-        
-        deformation(1,0) = (xPlus[1]-xMinus[1]) / (2. * xSpace);
-        deformation(1,1) = (yPlus[1]-yMinus[1]) / (2. * ySpace);
-        deformation(1,2) = (zPlus[1]-zMinus[1]) / (2. * zSpace);
-
-        deformation(2,0) = (xPlus[2]-xMinus[2]) / (2. * xSpace);
-        deformation(2,1) = (yPlus[2]-yMinus[2]) / (2. * ySpace);
-        deformation(2,2) = (zPlus[2]-zMinus[2]) / (2. * zSpace);
-        
-        cauchy_green = deformation.transpose() * deformation;
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
-        ev = solver.eigenvectors().col(2).real();
-    }
-
-    /* @brief Get the dominant eigenvector and eigenvalue for a given position by constructing the grid around it.
-     * @param[in] x0 std::vector<T> containing the initial state to determine the eigenvector for
-     * @param[inout] ev The dominant eigenvector for the flow at that point.
-     * @param[inout] eVal The dominant eigenvalue for the flow at that point.
-     * @param[in] xSpace The step in the x-direction
-     * @param[in] ySpace The step in the y-direction
-     * @param[in] zSpace the step in the z-direction.
-     */
-    template <typename Type>
-    void getDominantEigenVectorAndEigenvalue(const std::vector<Type>& x0, Type& xSpace, Type& ySpace, Type& zSpace, Eigen::Matrix<Type, 3, 1>& ev, Type& eVal)
-    {
-        Eigen::Matrix<Type, 3, 3> deformation, cauchy_green;
-        std::vector<double> xPlus(3), xMinus(3), yPlus(3), yMinus(3), zPlus(3), zMinus(3);
-
-        xPlus = x0; xPlus[0] += xSpace;
-        xMinus = x0; xMinus[0] -= xSpace;
-        yPlus = x0; yPlus[1] += ySpace;
-        yMinus = x0; yMinus[1] -= ySpace;
-        zPlus = x0; zPlus[2] += zSpace;
-        zMinus = x0; zMinus[2] -= zSpace;
-
-        this->integrate(xPlus);
-        this->integrate(xMinus);
-        this->integrate(yPlus);
-        this->integrate(yMinus);
-        this->integrate(zPlus);
-        this->integrate(zMinus);
-
-        // deformation tensor 
-        deformation(0,0) = (xPlus[0]-xMinus[0]) / (2. * xSpace);
-        deformation(0,1) = (yPlus[0]-yMinus[0]) / (2. * ySpace);
-        deformation(0,2) = (zPlus[0]-zMinus[0]) / (2. * zSpace);
-        
-        deformation(1,0) = (xPlus[1]-xMinus[1]) / (2. * xSpace);
-        deformation(1,1) = (yPlus[1]-yMinus[1]) / (2. * ySpace);
-        deformation(1,2) = (zPlus[1]-zMinus[1]) / (2. * zSpace);
-
-        deformation(2,0) = (xPlus[2]-xMinus[2]) / (2. * xSpace);
-        deformation(2,1) = (yPlus[2]-yMinus[2]) / (2. * ySpace);
-        deformation(2,2) = (zPlus[2]-zMinus[2]) / (2. * zSpace);
-        
-        cauchy_green = deformation.transpose() * deformation;
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cauchy_green);
-        ev = solver.eigenvectors().col(2).real();
-        eVal = solver.eigenvalues().maxCoeff();
-    }
-
-    /* @brief Computes the sign of a given number.
-       @param[in] val The number to compute the sign of
-       @returns Integer in {+1, 0, -1} giving the sign of val.
-    */
-    template <typename numericType>
-    int sgn(numericType val)
-    {
-        return (val > 0) - (val < 0);
-    }
-
-    /* @brief Integrates a given trajectory from time initTime to finalTime
-       @param[inout] x On entry, it is the initial condition. On exit, it is the final condition.
-       @param[in] initTime The initial time of the integration
-       @param[in] finalTime The final time of the integration.
-       @param[in] absTol The absolute tolerance for the integrator
-       @param[in] relTol The relative tolerance for the integrator
-    */
-    template <typename numericType>
-    void integrateForceFunction(std::vector<numericType>& x, numericType& initTime, numericType& finalTime, double& absTol, double& relTol)
-    {
-        typedef std::vector<numericType> state_type;
-        int sign = Helpers::sgn(finalTime - initTime);
-        boost::numeric::odeint::bulirsch_stoer<state_type> bulirsch_stepper(absTol, relTol);
-        boost::numeric::odeint::integrate_adaptive(bulirsch_stepper, dynSystem, x, initTime, finalTime, sign*.01, abcFlowObserver);
-    }
-
-    /* Construct helicity by construction obtaining directly the eigenvectors around the desired points using an auxiliary grid. */
-    template <typename Type>
-    void getHelicityAuxiliaryGrid(std::vector<Type>& x, Type& initTime, Type& finalTime, double& absTol, double&relTol,
-                                  double &xStep, double& yStep, double& zStep)
-    {
-        /* Define auxiliary grid of points */
-
+        double distanceThresholdSquared = distanceThreshold * distanceThreshold;
+        for (size_t i = 0; i < trajectory.size(); ++i)
+        {
+            Point<Type> differencePoint = trajectory[i] - point;
+            Type distance = (differencePoint.x * differencePoint.x) + (differencePoint.y * differencePoint.y) + (differencePoint.z * differencePoint.z);
+            if (distance < distanceThresholdSquared)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
 }
